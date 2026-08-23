@@ -23,6 +23,10 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             max_targets=int(conf.get("max_targets", 5)),
             max_rooms=int(conf.get("max_rooms", 4)),
             max_reviews=int(conf.get("max_reviews", 2)),
+            max_failed_action_retries=int(conf.get("max_failed_action_retries", 1)),
+            done_veto_on_recent_failure=bool(
+                conf.get("done_veto_on_recent_failure", True)
+            ),
         )
         self._peer_log_path = os.path.join(self.output_dir, "peer_consult.jsonl")
 

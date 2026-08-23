@@ -97,9 +97,11 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         )
         self.curr_prompt += prompt_addition
         self.trace += prompt_addition
-        self.is_done = self.check_if_agent_done(llm_response) or (
+        done_by_model = self.check_if_agent_done(llm_response)
+        done_by_limit = (
             self.replanning_count == self.planner_config.replanning_threshold
         )
+        self.is_done = done_by_model or done_by_limit
         self.replanning_count += 1
         if self.is_done:
             return {
@@ -108,6 +110,7 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
                 "high_level_action": ("Done", None, None),
                 "thought": thought,
                 "print": print_str,
+                "done_reason": "replanning_limit" if done_by_limit else "model_done",
             }
 
         high_level_actions = self.actions_parser(self.agents, llm_response, self.params)
@@ -121,6 +124,7 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
             "high_level_action": action,
             "thought": thought,
             "print": print_str,
+            "done_reason": None,
         }
 
     def execute_proposal(self, proposal, final_action, observations):
@@ -130,6 +134,43 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         is_done = bool(proposal["is_done"])
         print_str = proposal["print"]
         if is_done:
+            # The board may reject Done[] only from grounded local evidence
+            # (held object or immediately preceding skill failure). Continue
+            # the same ReAct transcript rather than ending the episode.
+            done_rejection = final_action[2]
+            if done_rejection:
+                self.is_done = False
+                self.replan_required = True
+                responses = {agent_uid: str(done_rejection)}
+                print_str += self._add_responses_to_prompt(responses)
+                self._append_card_for_next_turn()
+                self._peerconsult_ticket_index += 1
+                ticket = {
+                    "id": self._peerconsult_ticket_index,
+                    "action": "Done",
+                    "input": None,
+                    "valid": False,
+                    "terminal": True,
+                    "status": "rejected",
+                    "response": str(done_rejection),
+                    "started_after_replan": is_new,
+                    "replan_required_before_execution": True,
+                }
+                planner_info: Dict[str, Any] = {
+                    "replanned": {agent_uid: is_new},
+                    "replan_required": {agent_uid: True},
+                    "responses": responses,
+                    "thought": {agent_uid: proposal["thought"]},
+                    "is_done": {agent_uid: False},
+                    "print": print_str,
+                    "high_level_actions": {agent_uid: final_action},
+                    "prompts": {agent_uid: self.curr_prompt},
+                    "traces": {agent_uid: self.trace},
+                    "replanning_count": {agent_uid: self.replanning_count},
+                    "agent_states": self.get_last_agent_states(),
+                    "peerconsult_action_ticket": {agent_uid: ticket},
+                }
+                return {}, planner_info, False
             return {}, self._done_info(proposal), True
 
         low_level_actions, responses = self.process_high_level_actions(

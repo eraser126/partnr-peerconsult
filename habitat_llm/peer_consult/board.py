@@ -28,22 +28,29 @@ class PeerConsultBoard:
         max_targets: int = 5,
         max_rooms: int = 4,
         max_reviews: int = 2,
+        max_failed_action_retries: int = 1,
+        done_veto_on_recent_failure: bool = True,
     ) -> None:
         self.claim_ttl_decisions = claim_ttl_decisions
         self.max_targets = max_targets
         self.max_rooms = max_rooms
         self.max_reviews = max_reviews
+        self.max_failed_action_retries = max_failed_action_retries
+        self.done_veto_on_recent_failure = done_veto_on_recent_failure
         self.reset()
 
     def reset(self) -> None:
         self.tick = 0
         self.known_entities: Dict[str, Dict[str, Any]] = {}
+        self.known_furniture: Dict[str, Dict[str, Any]] = {}
         self.agent_rooms: Dict[int, str] = {}
         self.physical_owners: Dict[str, int] = {}
         self.claims: Dict[str, Dict[str, Any]] = {}
         self.current_intents: Dict[int, Dict[str, Any]] = {}
         self.reviews: List[Dict[str, Any]] = []
         self.execution_evidence: Dict[Tuple[int, int], Dict[str, Any]] = {}
+        self.failure_counts: Dict[Tuple[str, str], int] = {}
+        self.last_terminal_feedback: Dict[int, Dict[str, Any]] = {}
 
     @staticmethod
     def _safe_room(graph: Any, entity: Any) -> str:
@@ -120,6 +127,30 @@ class PeerConsultBoard:
                 if owner is not None:
                     self.physical_owners[object_id] = owner
 
+            # Furniture facts come from the same partial graph as the original
+            # agent grammar, never from a full world graph.
+            try:
+                furnitures: Iterable[Any] = graph.get_all_furnitures()
+            except Exception:
+                furnitures = []
+            for furniture in furnitures:
+                furniture_id = str(furniture.name)
+                record = self.known_furniture.setdefault(
+                    furniture_id,
+                    {
+                        "id": furniture_id,
+                        "kind": "furniture",
+                        "first_seen_tick": self.tick,
+                        "sources": [],
+                    },
+                )
+                record["last_seen_tick"] = self.tick
+                if agent_uid not in record["sources"]:
+                    record["sources"].append(agent_uid)
+                room = self._safe_room(graph, furniture)
+                if room != "unknown":
+                    record["room"] = room
+
         self._expire_claims()
 
     def _held_by(self, agent_uid: int) -> List[str]:
@@ -193,9 +224,98 @@ class PeerConsultBoard:
                 "recent_reviews={}".format(
                     [review["reason"] for review in relevant_reviews] or ["none"]
                 ),
+                "spatial_action_rule: for a fixed chair/sofa/bed/table reference, use "
+                "Rearrange[object, on, floor, next_to, reference]. Do not use "
+                "within floor. For a movable reference, it must already be on the "
+                "same target furniture.",
+                "termination_rule: do not use Done[] while holding an object or immediately "
+                "after a failed skill. Inspect the latest local observation and recover first.",
                 "Use this card only as grounded coordination context. Do not state that a task is complete without environment evidence.",
             ]
         )
+
+    @staticmethod
+    def _action_args(action: Action) -> List[str]:
+        """Split a public high-level action argument string conservatively."""
+        action_input = action[1]
+        if action_input is None:
+            return []
+        return [part.strip() for part in str(action_input).split(",")]
+
+    @classmethod
+    def _action_signature(cls, action: Action) -> Tuple[str, str]:
+        return ((action[0] or "").lower(), ",".join(cls._action_args(action)).lower())
+
+    @staticmethod
+    def _is_none(value: str) -> bool:
+        return value.strip().lower() in {"", "none"}
+
+    def _spatial_action_error(self, action: Action) -> Optional[str]:
+        """Reject only malformed or known-infeasible placement requests.
+
+        This is a method-side API guard. It uses no task propositions and does
+        not infer episode success; it only encodes the public Place/Rearrange
+        contract before an expensive motor skill starts.
+        """
+        name = (action[0] or "").lower()
+        if name not in {"place", "rearrange"} or action[2] is not None:
+            return None
+        args = self._action_args(action)
+        if len(args) != 5:
+            return None  # Let the original skill report its own syntax error.
+        _, relation, receptacle, constraint, reference = args
+        relation = relation.lower()
+        receptacle = receptacle.lower()
+        constraint = constraint.lower()
+        has_constraint = not self._is_none(constraint)
+        has_reference = not self._is_none(reference)
+
+        if relation not in {"on", "within"}:
+            return (
+                "PeerConsult action check: Place/Rearrange relation must be 'on' or "
+                "'within'. Re-plan using the documented five-argument API."
+            )
+        if receptacle == "floor" and relation != "on":
+            return (
+                "PeerConsult action check: floor supports only relation 'on'. Use "
+                "Rearrange[object, on, floor, next_to, reference] when appropriate."
+            )
+        if has_constraint != has_reference:
+            return (
+                "PeerConsult action check: spatial_constraint and reference_object must "
+                "either both be supplied or both be None."
+            )
+        if has_constraint and constraint != "next_to":
+            return "PeerConsult action check: the only supported spatial constraint is 'next_to'."
+
+        # Fixed-furniture next_to is implemented by sampling a floor pose near
+        # that furniture.  Putting an object on a chair and next_to the same
+        # chair is neither the intended relation nor reliably feasible.
+        if has_constraint and reference in self.known_furniture and receptacle != "floor":
+            return (
+                "PeerConsult action check: '{}' is a fixed furniture reference. "
+                "Use [object, on, floor, next_to, {}] instead of placing on/within "
+                "another receptacle.".format(reference, reference)
+            )
+        return None
+
+    def _done_rejection(self, agent_uid: int) -> Optional[str]:
+        """Return a local-evidence reason to continue, never a hidden goal check."""
+        held = self._held_by(agent_uid)
+        if held:
+            return (
+                "PeerConsult completion check: you still locally observe that you hold "
+                "{}. Place it safely and inspect the result before Done[].".format(held)
+            )
+        if self.done_veto_on_recent_failure:
+            feedback = self.last_terminal_feedback.get(agent_uid)
+            if feedback and feedback.get("failed"):
+                return (
+                    "PeerConsult completion check: the most recent skill failed: {}. "
+                    "Recover from that local feedback and inspect the environment before "
+                    "Done[].".format(feedback.get("response", "unknown failure"))
+                )
+        return None
 
     def _intent_from_action(self, action: Action) -> Dict[str, Any]:
         action_name, action_input, _ = action
@@ -212,7 +332,15 @@ class PeerConsultBoard:
             stage = "done"
         else:
             stage = "idle"
-        target = str(action_input) if action_input else None
+        # For Pick/Place/Rearrange the first argument is the moved object. The
+        # old whole-string key did not prevent duplicate-object claims.
+        args = self._action_args(action)
+        if name in {"pick", "place", "rearrange"}:
+            target = args[0] if args else None
+        elif name in {"navigate", "explore"}:
+            target = args[0] if args else None
+        else:
+            target = str(action_input) if action_input else None
         if target not in self.known_entities:
             target = None
         return {"stage": stage, "target": target, "action": action_name or ""}
@@ -242,6 +370,27 @@ class PeerConsultBoard:
             for uid, action in final_actions.items()
         }
 
+        # Reject model-only completion when the agent's own partial evidence
+        # proves it is holding an object or its latest skill failed. No
+        # evaluator state is queried.
+        for uid, proposal in proposals.items():
+            if not bool(proposal.get("is_new")) or not bool(proposal.get("is_done")):
+                continue
+            if proposal.get("done_reason") == "replanning_limit":
+                continue
+            reason = self._done_rejection(uid)
+            if reason is not None:
+                final_actions[uid] = (None, None, reason)
+                intents[uid] = self._intent_from_action(final_actions[uid])
+                reviews.append(
+                    {
+                        "tick": self.tick,
+                        "agent": uid,
+                        "reason": "premature_done",
+                        "replacement": "replan",
+                    }
+                )
+
         # A simultaneous duplicate claim has a deterministic winner.
         targets: Dict[str, List[int]] = {}
         for uid in mutable:
@@ -268,6 +417,39 @@ class PeerConsultBoard:
 
         # Existing peer claims and observed peer ownership veto only new proposals.
         for uid in sorted(mutable):
+            spatial_error = self._spatial_action_error(final_actions[uid])
+            if spatial_error is not None:
+                final_actions[uid] = (None, None, spatial_error)
+                intents[uid] = self._intent_from_action(final_actions[uid])
+                reviews.append(
+                    {
+                        "tick": self.tick,
+                        "agent": uid,
+                        "reason": "spatial_action_guard",
+                        "replacement": "replan",
+                    }
+                )
+                continue
+
+            signature = self._action_signature(final_actions[uid])
+            if self.failure_counts.get(signature, 0) >= self.max_failed_action_retries:
+                final_actions[uid] = (
+                    None,
+                    None,
+                    "PeerConsult recovery check: this exact action already failed. "
+                    "Change location, reference object, relation, or delegate to your "
+                    "peer instead of repeating it.",
+                )
+                intents[uid] = self._intent_from_action(final_actions[uid])
+                reviews.append(
+                    {
+                        "tick": self.tick,
+                        "agent": uid,
+                        "reason": "repeated_failed_action",
+                        "replacement": "replan",
+                    }
+                )
+                continue
             target = intents[uid]["target"]
             if target is None:
                 continue
@@ -301,13 +483,41 @@ class PeerConsultBoard:
         return final_actions, reviews
 
     def record_execution_evidence(self, planner_info: Mapping[str, Any]) -> None:
-        """Store a terminal/ongoing ticket once without inferring task success."""
+        """Store skill feedback for recovery, without inferring task success."""
         for uid, ticket in planner_info.get("peerconsult_action_ticket", {}).items():
             key = (int(uid), int(ticket["id"]))
             # A skill can be observed as ongoing many times.  Preserve its first
             # record, then allow exactly the terminal observation to replace it.
-            if key not in self.execution_evidence or bool(ticket.get("terminal")):
+            previous = self.execution_evidence.get(key)
+            became_terminal = bool(ticket.get("terminal")) and not bool(
+                previous and previous.get("terminal")
+            )
+            if previous is None or bool(ticket.get("terminal")):
                 self.execution_evidence[key] = dict(ticket)
+            if not became_terminal:
+                continue
+            response = str(ticket.get("response", ""))
+            failed = any(
+                marker in response.lower()
+                for marker in (
+                    "failed",
+                    "no valid placement",
+                    "not close",
+                    "incorrect syntax",
+                    "wrong use of api",
+                )
+            )
+            self.last_terminal_feedback[int(uid)] = {
+                "response": response,
+                "failed": failed,
+                "tick": self.tick,
+                "action": ticket.get("action", ""),
+                "input": ticket.get("input", ""),
+            }
+            if failed:
+                action = (ticket.get("action"), ticket.get("input"), None)
+                signature = self._action_signature(action)
+                self.failure_counts[signature] = self.failure_counts.get(signature, 0) + 1
 
     def event(self, proposals: Mapping[int, Mapping[str, Any]], reviews: List[Dict[str, Any]], final_actions: Mapping[int, Action], planner_info: Mapping[str, Any]) -> Dict[str, Any]:
         return {

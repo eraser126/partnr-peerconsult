@@ -15,6 +15,10 @@ peerconsult:
   max_targets: 5
   max_rooms: 4
   max_reviews: 2
+  # Method-side guards use only public high-level actions and each agent's
+  # partial graph / motor-skill feedback, never evaluator or full-world state.
+  max_failed_action_retries: 1
+  done_veto_on_recent_failure: true
 
 agents:
   agent_0:

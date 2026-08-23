@@ -5,7 +5,7 @@ prompt: |-
 
         {agent_role_description}
 
-        Many calls to the same action in a row are a sign that something has gone wrong and you should try a different action.{eot_tag}{rag_examples}{user_tag}Task: {input}
+        Many calls to the same action in a row are a sign that something has gone wrong and you should try a different action. Before manipulating objects, make an ordered checklist of every required room/state transition in the task; complete and retain each earlier transition instead of jumping directly to the final location. For Place/Rearrange use exactly five arguments: object, relation (on/within), target furniture or floor, optional next_to, optional reference. If the reference is a fixed chair, sofa, bed, or table and the requested relation is "next to", use the floor as target: Rearrange[object, on, floor, next_to, reference]. Do not use Done[] while holding an object or immediately after a failed skill; inspect and recover first.{eot_tag}{rag_examples}{user_tag}Task: {input}
 
         {world_description}
 
