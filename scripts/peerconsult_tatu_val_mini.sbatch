@@ -29,6 +29,13 @@ test -f "$HABITAT_NVIDIA_GL/libEGL.so.1"
 test -f "$HABITAT_NVIDIA_GL/libOpenGL.so.0"
 export LD_LIBRARY_PATH="$HABITAT_NVIDIA_GL:${LD_LIBRARY_PATH:-}"
 
+# Keep CUDA's visible physical GPU aligned with Slurm's allocation so
+# Habitat-Sim's headless EGL lookup does not use a stale device index.
+if [[ "${SLURM_JOB_GPUS:-}" =~ ^[0-9]+$ ]]; then
+  export CUDA_VISIBLE_DEVICES="$SLURM_JOB_GPUS"
+  export GPU_DEVICE_ORDINAL="$SLURM_JOB_GPUS"
+fi
+
 export PYTHONUNBUFFERED=1
 export PYTHONNOUSERSITE=1
 export HYDRA_FULL_ERROR=1
@@ -37,6 +44,7 @@ test -n "${https_proxy:-}"
 
 echo "Started: $(date -Is)"
 echo "Node: $(hostname)"
+echo "Slurm GPU mapping: job=${SLURM_JOB_GPUS:-unset} cuda=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "Model: $PARTNR_MODEL"
 echo "Base URL configured: yes"
 nvidia-smi
