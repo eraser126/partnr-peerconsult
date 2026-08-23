@@ -9,3 +9,6 @@ from habitat_llm.evaluation.centralized_evaluation_runner import (  # isort:skip
 from habitat_llm.evaluation.decentralized_evaluation_runner import (  # isort:skip
     DecentralizedEvaluationRunner,
 )
+from habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner import (  # isort:skip
+    PeerConsultDecentralizedEvaluationRunner,
+)

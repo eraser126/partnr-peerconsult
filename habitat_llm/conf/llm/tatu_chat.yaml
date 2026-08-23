@@ -1,0 +1,30 @@
+llm:
+  _target_: habitat_llm.llm.OpenAIChat
+  _partial_: True
+
+verbose: True
+system_message: >-
+  You are an expert at embodied task planning. Follow the requested ReAct
+  format exactly. Do not use Markdown fences, XML thinking tags, or prose
+  after the final action. The final non-empty line before Assigned! must be
+  one complete allowed skill call in the exact form SkillName[arguments].
+system_tag: ''
+user_tag: ''
+assistant_tag: ''
+eot_tag: ''
+keep_message_history: False
+
+# API key and base URL are intentionally not configured here.  Export
+# OPENAI_API_KEY and OPENAI_BASE_URL in the submitting shell instead.
+generation_params:
+  model: ${oc.env:PARTNR_MODEL,deepseek-v4-flash-0731}
+  # Null deliberately omits max_tokens from the API request. The provider then
+  # selects its own default completion budget for the token smoke test.
+  max_tokens: null
+  temperature: 0
+  top_p: 1
+  stream: False
+  stop: 'Assigned!'
+  frequency_penalty: 0
+  presence_penalty: 0
+  request_timeout: 300

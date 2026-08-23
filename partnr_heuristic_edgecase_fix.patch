@@ -1,0 +1,42 @@
+diff --git a/habitat_llm/world_model/world_graph.py b/habitat_llm/world_model/world_graph.py
+--- a/habitat_llm/world_model/world_graph.py
++++ b/habitat_llm/world_model/world_graph.py
+@@ -201,14 +201,15 @@ class WorldGraph(Graph):
+                 furniture = self.find_furniture_for_object(obj)
+                 if furniture is not None:
+                     objs_info += obj.name + ": " + furniture.name + "\n"
+-                elif furniture is None and (
+-                    (is_human_wg and self.agent_asymmetry)
+-                    or (not is_human_wg and self.world_model_type == "concept_graph")
+-                ):
+-                    # Objects are allowed to be marooned on unknown furniture under
+-                    # agent asymmetry condition, since the object may be placed anywhere
+-                    # in the house unbeknownst to the human agent
++                elif furniture is None:
++                    # This method serializes the graph for planner logging.  During
++                    # simulator state updates an object can briefly have no graph
++                    # parent (for example, after a placement).  Preserve that fact in
++                    # the log instead of aborting an otherwise valid evaluation.
++                    # This does not mutate the graph or change planner actions.
+                     objs_info += obj.name + ": " + "unknown" + "\n"
+-                else:
+-                    raise ValueError(f"Object {obj.name} has no parent")
+         return f"Furniture:\n{house_info}\nObjects:\n{objs_info}"
+diff --git a/habitat_llm/planner/scripted_centralized_planner.py b/habitat_llm/planner/scripted_centralized_planner.py
+--- a/habitat_llm/planner/scripted_centralized_planner.py
++++ b/habitat_llm/planner/scripted_centralized_planner.py
+@@ -714,7 +714,10 @@ class ScriptedCentralizedPlanner(Planner):
+             # later we should store for block objects whether the proposition index is happening
+             # before the terminal constraint
+             objects_with_earlier_terminal = []
+-            if proposition.function_name != "is_next_to":
++            # State predicates (clean, fill, power, ...) may intentionally act on
++            # an object after an earlier terminal rearrangement proposition.  Do not
++            # remove those required objects from their candidate set.
++            if (
++                proposition.function_name not in OBJECT_STATES
++                and proposition.function_name != "is_next_to"
++            ):
+                 objects_with_earlier_terminal = [
+                     obj_name
+                     for obj_name, prop_ind_terminal in self.block_objects

@@ -390,9 +390,39 @@ def remove_non_alpha_left(input_string):
     return ""
 
 
+def _last_complete_zero_shot_action(input_string: str) -> str:
+    """Return the final complete ``Skill[argument]`` line in a model reply.
+
+    OpenAI-compatible providers occasionally add Markdown, a trailing natural
+    language sentence, or an ``Action:`` label after following the ReAct
+    format.  The previous implementation used the literal final line, so such
+    harmless presentation differences became an invalid PARTNR action.  Walk
+    upward through the reply and only unwrap an *unambiguous*, complete skill
+    call.  If none exists, preserve the old final-line behaviour so the
+    planner surfaces the provider's actual malformed response instead of
+    inventing an action.
+    """
+    action_pattern = re.compile(r"([A-Za-z_][A-Za-z0-9_]*\s*\[[^\[\]\r\n]*\])")
+    for line in reversed(input_string.strip().splitlines()):
+        candidate = line.strip().strip("`")
+        candidate = re.sub(
+            r"^(?:final\s+)?action\s*:\s*", "", candidate, flags=re.IGNORECASE
+        )
+        # Some OpenAI-compatible models emit ``I will now use
+        # Explore[kitchen_1]`` rather than a bare action line.  A complete
+        # call is still explicit in that output, so preserve it instead of
+        # treating the surrounding prose as an invalid PARTNR action.
+        match = action_pattern.search(candidate)
+        if match is not None:
+            return match.group(1)
+    return input_string.strip().split("\n")[-1]
+
+
 def zero_shot_action_parser(agents, input_string, params=None):
-    # get the skill call before the Assigned!
-    action_line = input_string.strip().split("\n")[-1]
+    # Extract the final complete skill call. This remains intentionally
+    # provider-neutral and is shared by the original ReAct baseline and
+    # PeerConsult, keeping their model-interface treatment identical.
+    action_line = _last_complete_zero_shot_action(input_string)
     # this parser is for single agent only
     assert len(agents) == 1
     agent_id = agents[0].uid

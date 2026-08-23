@@ -89,6 +89,12 @@ celerybeat.pid
 
 # Environments
 .env
+
+# Local evaluation artifacts and runtime logs. Keep these out of source control
+# because they may contain rollout traces, model outputs, or local paths.
+logs/
+outputs/
+habitat_llm.log
 .venv
 venv/
 ENV/

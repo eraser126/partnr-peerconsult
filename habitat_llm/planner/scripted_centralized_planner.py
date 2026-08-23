@@ -714,7 +714,13 @@ class PropositionResolver:
             # later we should store for block objects whether the proposition index is happening
             # before the terminal constraint
             objects_with_earlier_terminal = []
-            if proposition.function_name != "is_next_to":
+            # State predicates (clean, fill, power, ...) may intentionally act on
+            # an object after an earlier terminal rearrangement proposition. Do not
+            # remove those required objects from their candidate set.
+            if (
+                proposition.function_name not in OBJECT_STATES
+                and proposition.function_name != "is_next_to"
+            ):
                 objects_with_earlier_terminal = [
                     obj_name
                     for obj_name, prop_ind_terminal in self.block_objects

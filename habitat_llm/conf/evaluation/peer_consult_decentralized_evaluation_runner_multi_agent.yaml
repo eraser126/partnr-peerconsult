@@ -1,0 +1,23 @@
+defaults:
+  - /agent@agents.agent_0.config: oracle_rearrange_agent
+  - /agent@agents.agent_1.config: oracle_rearrange_agent
+  - /planner@agents.agent_1.planner: peer_consult_zero_shot_react_planner
+  - /planner@agents.agent_0.planner: peer_consult_zero_shot_react_planner
+
+type: "peer_consult"
+truncate_length: 50
+save_video: True
+output_dir: ${hydra:runtime.output_dir}
+
+peerconsult:
+  # Unit: coordinator decision rounds, deliberately not TDW frames.
+  claim_ttl_decisions: 3
+  max_targets: 5
+  max_rooms: 4
+  max_reviews: 2
+
+agents:
+  agent_0:
+    uid: 0
+  agent_1:
+    uid: 1

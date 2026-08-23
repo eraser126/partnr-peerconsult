@@ -1,0 +1,19 @@
+defaults:
+  - /llm@plan_config.llm: llama
+  - /instruct@plan_config.instruct: peer_consult_zero_shot_prompt
+
+_target_: 'habitat_llm.planner.peer_consult_zero_shot_react_planner.PeerConsultZeroShotReactPlanner'
+_recursive_: False
+_partial_: True
+
+plan_config:
+    replanning_threshold: 50
+    planning_mode: "cot"
+    constrained_generation: True
+    objects_response: True
+    objects_response_include_states: False
+    centralized: False
+    enable_rag: False
+    rag_dataset_dir: ""
+    rag_data_source_name: ""
+    example_type: "react"

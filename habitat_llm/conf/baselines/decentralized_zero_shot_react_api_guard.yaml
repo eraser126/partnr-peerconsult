@@ -1,0 +1,14 @@
+# API-budgeted counterpart of the official decentralized Zero-shot ReAct
+# baseline. Use this config with the same LLM/API settings as PeerConsult.
+# It changes only episode termination at the runner layer, not PARTNR skills,
+# scenes, observations, or metrics.
+defaults:
+  - /baselines/decentralized_zero_shot_react_summary
+  - _self_
+
+evaluation:
+  no_progress_guard:
+    enabled: true
+    min_elapsed_seconds: 600
+    decision_window: 8
+    max_elapsed_seconds: 1800

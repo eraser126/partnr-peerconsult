@@ -10,6 +10,14 @@ truncate_length: 50  # max characters in file name, long files names can raise O
 save_video: True
 output_dir: ${hydra:runtime.output_dir}
 
+# Default off to retain the official protocol.  API experiment configs can
+# enable the guards; they observe only each agent's partial graph.
+no_progress_guard:
+  enabled: false
+  min_elapsed_seconds: 600
+  decision_window: 8
+  max_elapsed_seconds: 1800
+
 agents:
   agent_0:
     uid: 0

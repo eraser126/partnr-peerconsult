@@ -1,0 +1,43 @@
+# @package _global_
+# Strict-observation PeerConsult V2.  The embodiment, partial observations,
+# Oracle motor skills, LLM backend and episode protocol match the official
+# decentralized zero-shot ReAct summary baseline.
+
+defaults:
+  - /examples/planner_multi_agent_demo_config
+  - override /evaluation: peer_consult_decentralized_evaluation_runner_multi_agent
+  - override /planner@evaluation.agents.agent_0.planner: peer_consult_zero_shot_react_planner
+  - override /instruct@evaluation.agents.agent_0.planner.plan_config.instruct: peer_consult_zero_shot_prompt
+  - override /agent@evaluation.agents.agent_0.config: oracle_rearrange_agent_motortoolsonly
+  - override /planner@evaluation.agents.agent_1.planner: peer_consult_zero_shot_react_planner
+  - override /instruct@evaluation.agents.agent_1.planner.plan_config.instruct: peer_consult_zero_shot_prompt
+  - override /agent@evaluation.agents.agent_1.config: oracle_rearrange_object_states_agent_motortoolsonly
+  - _self_
+
+agent_asymmetry: True
+world_model:
+  partial_obs: True
+
+evaluation:
+  no_progress_guard:
+    enabled: true
+    min_elapsed_seconds: 600
+    decision_window: 8
+    max_elapsed_seconds: 1800
+  agents:
+    agent_0:
+      planner:
+        plan_config:
+          constrained_generation: True
+          objects_response: True
+          replanning_threshold: 50
+          llm:
+            inference_mode: "rlm"
+    agent_1:
+      planner:
+        plan_config:
+          constrained_generation: True
+          objects_response: True
+          replanning_threshold: 50
+          llm:
+            inference_mode: "rlm"

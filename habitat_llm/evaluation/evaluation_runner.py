@@ -129,6 +129,68 @@ class EvaluationRunner:
         self._write_out_world_graph: bool = dump_world_graph
         self._world_graph_write_out_frequency = 5
 
+    @staticmethod
+    def _is_agent_entity(entity: Entity) -> bool:
+        """Return whether a world-graph node is an embodied agent."""
+        return entity.__class__.__name__ in {"Human", "SpotRobot"}
+
+    @classmethod
+    def _observable_progress_signature(
+        cls, world_graph: Dict[int, WorldGraph]
+    ) -> tuple:
+        """Summarize only facts observable in each agent's partial graph.
+
+        Agent motion within a room is intentionally excluded: it often changes
+        without moving a task forward.  New observed entities, their semantic
+        states/relations, and agent room changes remain, so exploration and
+        successful manipulation reset the no-progress counter without reading
+        hidden evaluation propositions or global world state.
+        """
+        facts = []
+        for agent_id, graph in sorted(world_graph.items()):
+            for node, neighbors in graph.graph.items():
+                if cls._is_agent_entity(node):
+                    for neighbor in neighbors:
+                        if neighbor.__class__.__name__ == "Room":
+                            facts.append((agent_id, "agent_room", neighbor.name))
+                    continue
+
+                properties = node.properties
+                states = json.dumps(
+                    properties.get("states", {}), sort_keys=True, default=str
+                )
+                facts.append(
+                    (
+                        agent_id,
+                        "node",
+                        node.name,
+                        properties.get("type", ""),
+                        properties.get("category", ""),
+                        states,
+                    )
+                )
+                for neighbor, relation in neighbors.items():
+                    if cls._is_agent_entity(neighbor):
+                        continue
+                    facts.append(
+                        (
+                            agent_id,
+                            "edge",
+                            node.name,
+                            neighbor.name,
+                            str(relation),
+                        )
+                    )
+        return tuple(sorted(facts))
+
+    @staticmethod
+    def _is_replanning_decision(planner_info: Dict[str, Any]) -> bool:
+        """Count only fresh LLM/planner decisions, never motor-skill ticks."""
+        replanned = planner_info.get("replanned", {})
+        if isinstance(replanned, dict):
+            return any(bool(value) for value in replanned.values())
+        return bool(replanned)
+
     def _initialize_planners(self):
         """
         Initialize the planners
@@ -594,6 +656,21 @@ class EvaluationRunner:
         low_level_actions: List[Dict[str, Any]] = []
         should_end = False
 
+        # Disabled by default to preserve the official benchmark protocol.
+        # API experiments may enable it to prevent expensive, observation-free
+        # planning loops.  It uses no hidden success/proposition measures.
+        guard_conf = self.evaluation_runner_config.get("no_progress_guard", {})
+        guard_enabled = bool(guard_conf.get("enabled", False))
+        guard_min_elapsed_seconds = float(
+            guard_conf.get("min_elapsed_seconds", 600)
+        )
+        guard_decision_window = int(guard_conf.get("decision_window", 8))
+        guard_max_elapsed_seconds = float(
+            guard_conf.get("max_elapsed_seconds", 1800)
+        )
+        previous_progress_signature = None
+        stagnant_decisions = 0
+
         # Plan until required
         while not should_end:
             # Print the llm response
@@ -618,6 +695,53 @@ class EvaluationRunner:
             low_level_actions, planner_info, should_end = self.get_low_level_actions(
                 self.current_instruction, observations, self.env_interface.world_graph
             )
+
+            # This wall-clock limit is intentionally evaluated at the runner
+            # layer, after a planner decision has returned.  It is independent
+            # of hidden evaluator state and prevents observable-but-unhelpful
+            # loops (for example, repeatedly travelling between rooms).
+            elapsed_seconds = time.time() - t_0
+            if guard_enabled and elapsed_seconds >= guard_max_elapsed_seconds:
+                should_end = True
+                planner_info["termination"] = {
+                    "reason": "terminated_wall_time_limit",
+                    "elapsed_seconds": round(elapsed_seconds, 3),
+                    "max_elapsed_seconds": guard_max_elapsed_seconds,
+                }
+                print(
+                    "Terminating episode after %.1fs: reached the %.1fs "
+                    "wall-clock limit."
+                    % (elapsed_seconds, guard_max_elapsed_seconds)
+                )
+            elif guard_enabled and self._is_replanning_decision(planner_info):
+                signature = self._observable_progress_signature(
+                    self.env_interface.world_graph
+                )
+                if (
+                    previous_progress_signature is None
+                    or signature != previous_progress_signature
+                ):
+                    stagnant_decisions = 0
+                else:
+                    stagnant_decisions += 1
+                previous_progress_signature = signature
+
+                if (
+                    elapsed_seconds >= guard_min_elapsed_seconds
+                    and stagnant_decisions >= guard_decision_window
+                ):
+                    should_end = True
+                    planner_info["termination"] = {
+                        "reason": "terminated_no_progress",
+                        "elapsed_seconds": round(elapsed_seconds, 3),
+                        "stagnant_decisions": stagnant_decisions,
+                        "decision_window": guard_decision_window,
+                    }
+                    print(
+                        "Terminating episode after %.1fs: %d consecutive "
+                        "replanning decisions without observable progress."
+                        % (elapsed_seconds, stagnant_decisions)
+                    )
 
             # We terminate the episode if this loop gets stuck
             curr_env = self.env_interface.env.env.env._env

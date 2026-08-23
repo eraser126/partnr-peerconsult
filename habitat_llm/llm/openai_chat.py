@@ -4,13 +4,38 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree
 
+import logging
 import os
 from typing import Dict, List, Optional
 
 from omegaconf import DictConfig, OmegaConf
-from openai import AzureOpenAI
+from openai import OpenAI
 
 from habitat_llm.llm.base_llm import BaseLLM, Prompt
+
+
+logger = logging.getLogger(__name__)
+
+
+def log_completion_usage(completion, attempt: str) -> None:
+    """Log provider-reported usage without exposing prompts or credentials."""
+    usage = getattr(completion, "usage", None)
+    finish_reason = completion.choices[0].finish_reason
+    if usage is None:
+        logger.info("LLM %s: finish_reason=%s; token usage unavailable", attempt, finish_reason)
+        return
+    details = getattr(usage, "completion_tokens_details", None)
+    reasoning_tokens = getattr(details, "reasoning_tokens", None)
+    logger.info(
+        "LLM %s: finish_reason=%s prompt_tokens=%s completion_tokens=%s "
+        "reasoning_tokens=%s total_tokens=%s",
+        attempt,
+        finish_reason,
+        getattr(usage, "prompt_tokens", None),
+        getattr(usage, "completion_tokens", None),
+        reasoning_tokens,
+        getattr(usage, "total_tokens", None),
+    )
 
 
 def generate_message(multimodal_prompt, image_detail="auto"):
@@ -45,15 +70,17 @@ class OpenAIChat(BaseLLM):
         except Exception:
             raise ValueError("No OPENAI API keys provided")
         try:
-            endpoint = os.getenv("OPENAI_ENDPOINT")
-            assert len(endpoint) > 0, ValueError("No OPENAI_ENDPOINT keys provided")
+            base_url = os.getenv("OPENAI_BASE_URL")
+            assert base_url is not None and len(base_url) > 0
         except Exception:
-            raise ValueError("No OPENAI endpoint keys provided")
-        self.client = AzureOpenAI(
-            api_version="2024-06-01",
-            api_key=api_key,
-            azure_endpoint=f"https://{endpoint}",
-        )
+            raise ValueError(
+                "No OPENAI_BASE_URL provided. Set it to an OpenAI-compatible "
+                "base URL supplied by your API gateway"
+            )
+        # Use the provider-neutral OpenAI-compatible client.  The API key is
+        # deliberately read only from the process environment and is never
+        # stored in Hydra configs, Slurm scripts, or experiment outputs.
+        self.client = OpenAI(api_key=api_key, base_url=base_url.rstrip("/"))
         self._validate_conf()
         self.verbose = self.llm_conf.verbose
         self.verbose = True
@@ -99,7 +126,10 @@ class OpenAIChat(BaseLLM):
         if len(messages) == 0:
             messages.append({"role": "system", "content": self.llm_conf.system_message})
 
-        params["request_timeout"] = request_timeout
+        # `request_timeout` is a local client option rather than a Chat
+        # Completions payload field.  Sending it to an OpenAI-compatible
+        # gateway makes the request invalid.
+        request_timeout = params.pop("request_timeout", request_timeout)
         if type(prompt) is str:
             # Add current message
             messages.append({"role": "user", "content": prompt})
@@ -109,10 +139,46 @@ class OpenAIChat(BaseLLM):
             image_detail = "low"  # high/low/auto
             messages.append(generate_message(prompt, image_detail=image_detail))
 
-        text_response = self.client.chat.completions.create(
-            model=params["model"], messages=messages
+        # Remove optional values the API rejects when null.  Keep the
+        # remaining standard Chat Completions controls (temperature, top_p,
+        # penalties, max_tokens, and stop) provider-visible and reproducible.
+        request_params = {
+            "model": params["model"],
+            "messages": messages,
+            **{
+                key: value
+                for key, value in params.items()
+                if key != "model" and value is not None
+            },
+        }
+        completion = self.client.chat.completions.create(
+            **request_params, timeout=request_timeout
         )
-        text_response = text_response.choices[0].message.content
+        self.last_finish_reason = completion.choices[0].finish_reason
+        log_completion_usage(completion, "initial response")
+
+        # Some routed reasoning models use their whole completion budget
+        # before emitting the required PARTNR skill call.  Retry exactly once
+        # only when the provider explicitly reports length truncation; normal
+        # replies make one request as before.  This adapter is shared by
+        # baseline and PeerConsult, so their interface treatment stays equal.
+        if self.last_finish_reason == "length":
+            previous_limit = int(request_params.get("max_tokens", 0) or 0)
+            retry_limit = min(max(1024, previous_limit * 2), 2048)
+            if retry_limit > previous_limit:
+                retry_params = dict(request_params)
+                retry_params["max_tokens"] = retry_limit
+                logger.info(
+                    "LLM reply was length-truncated; retrying once with max_tokens=%d",
+                    retry_limit,
+                )
+                completion = self.client.chat.completions.create(
+                    **retry_params, timeout=request_timeout
+                )
+                self.last_finish_reason = completion.choices[0].finish_reason
+                log_completion_usage(completion, "length-retry response")
+
+        text_response = completion.choices[0].message.content or ""
         self.response = text_response
 
         # Update message history

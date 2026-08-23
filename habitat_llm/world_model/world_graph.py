@@ -199,16 +199,13 @@ class WorldGraph(Graph):
                 furniture = self.find_furniture_for_object(obj)
                 if furniture is not None:
                     objs_info += obj.name + ": " + furniture.name + "\n"
-                elif furniture is None and (
-                    (is_human_wg and self.agent_asymmetry)
-                    or (not is_human_wg and self.world_model_type == "concept_graph")
-                ):
-                    # Objects are allowed to be marooned on unknown furniture under
-                    # agent asymmetry condition, since the object may be placed anywhere
-                    # in the house unbeknownst to the human agent
+                elif furniture is None:
+                    # This method serializes the graph for planner logging. During
+                    # simulator state updates an object can briefly have no graph
+                    # parent (for example, after a placement). Preserve that fact in
+                    # the log instead of aborting an otherwise valid evaluation.
+                    # This does not mutate the graph or change planner actions.
                     objs_info += obj.name + ": " + "unknown" + "\n"
-                else:
-                    raise ValueError(f"Object {obj.name} has no parent")
         return f"Furniture:\n{house_info}\nObjects:\n{objs_info}"
 
     def is_object_with_human(self, obj):

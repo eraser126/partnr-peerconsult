@@ -41,6 +41,7 @@ from habitat_llm.agent.env import (
 from habitat_llm.evaluation import (
     CentralizedEvaluationRunner,
     DecentralizedEvaluationRunner,
+    PeerConsultDecentralizedEvaluationRunner,
     EvaluationRunner,
 )
 from habitat_llm.agent.env.dataset import CollaborationDatasetV0
@@ -283,9 +284,13 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
         eval_runner = CentralizedEvaluationRunner(config.evaluation, env_interface)
     elif config.evaluation.type == "decentralized":
         eval_runner = DecentralizedEvaluationRunner(config.evaluation, env_interface)
+    elif config.evaluation.type == "peer_consult":
+        eval_runner = PeerConsultDecentralizedEvaluationRunner(
+            config.evaluation, env_interface
+        )
     else:
         cprint(
-            "Invalid planner type. Please select between 'centralized' or 'decentralized'. Exiting",
+            "Invalid planner type. Please select 'centralized', 'decentralized', or 'peer_consult'. Exiting",
             "red",
         )
         return
