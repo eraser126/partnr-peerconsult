@@ -40,6 +40,8 @@ export HABITAT_NVIDIA_GL="$HOME/opt/nvidia-gl/570.211.01/extracted/NVIDIA-Linux-
 test -f "$HABITAT_NVIDIA_GL/libEGL.so.1"
 test -f "$HABITAT_NVIDIA_GL/libOpenGL.so.0"
 export LD_LIBRARY_PATH="$HABITAT_NVIDIA_GL:${LD_LIBRARY_PATH:-}"
+export __EGL_VENDOR_LIBRARY_FILENAMES="$PWD/scripts/nvidia_egl_vendor.json"
+test -f "$__EGL_VENDOR_LIBRARY_FILENAMES"
 
 # Habitat-Sim matches its requested CUDA index to an EGL physical device. On
 # this shared node, make the GPU assigned by Slurm explicit.

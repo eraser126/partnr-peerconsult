@@ -25,6 +25,8 @@ mkdir -p logs
 
 export HABITAT_NVIDIA_GL="$HOME/opt/nvidia-gl/570.211.01/extracted/NVIDIA-Linux-x86_64-570.211.01-no-compat32"
 export LD_LIBRARY_PATH="$HABITAT_NVIDIA_GL:${LD_LIBRARY_PATH:-}"
+export __EGL_VENDOR_LIBRARY_FILENAMES="$PWD/scripts/nvidia_egl_vendor.json"
+test -f "$__EGL_VENDOR_LIBRARY_FILENAMES"
 if [[ "${SLURM_JOB_GPUS:-}" =~ ^[0-9]+$ ]]; then
   export CUDA_VISIBLE_DEVICES="$SLURM_JOB_GPUS"
   export GPU_DEVICE_ORDINAL="$SLURM_JOB_GPUS"
