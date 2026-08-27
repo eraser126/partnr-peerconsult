@@ -6,7 +6,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Dict, List, Optional
 
 from omegaconf import DictConfig, OmegaConf
 from openai import OpenAI
@@ -15,45 +15,6 @@ from habitat_llm.llm.base_llm import BaseLLM, Prompt
 
 
 logger = logging.getLogger(__name__)
-
-
-_GATEWAY_MODEL_PROBES = set()
-_CONTEXT_METADATA_KEYS = {
-    "context_length",
-    "max_context_length",
-    "max_model_len",
-    "max_sequence_length",
-    "max_tokens",
-    "max_output_tokens",
-    "model_max_length",
-}
-
-
-def _model_payload(value: Any) -> Any:
-    """Return model metadata as plain Python objects without logging raw headers."""
-    if hasattr(value, "model_dump"):
-        return value.model_dump()
-    if isinstance(value, Mapping):
-        return dict(value)
-    return value
-
-
-def _context_metadata(value: Any, path: str = "") -> Dict[str, Any]:
-    """Keep only explicit context-limit fields from gateway model metadata."""
-    result: Dict[str, Any] = {}
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            child_path = f"{path}.{key}" if path else str(key)
-            if str(key).lower() in _CONTEXT_METADATA_KEYS and isinstance(
-                child, (str, int, float, bool, type(None))
-            ):
-                result[child_path] = child
-            elif isinstance(child, (Mapping, list, tuple)):
-                result.update(_context_metadata(child, child_path))
-    elif isinstance(value, (list, tuple)):
-        for index, child in enumerate(value):
-            result.update(_context_metadata(child, f"{path}[{index}]"))
-    return result
 
 
 def log_completion_usage(completion, attempt: str) -> None:
@@ -125,93 +86,6 @@ class OpenAIChat(BaseLLM):
         self.verbose = True
         self.message_history: List[Dict] = []
         self.keep_message_history = self.llm_conf.keep_message_history
-        self.context_diagnostics = bool(self.llm_conf.get("context_diagnostics", False))
-
-    def _gateway_context_probe(self, model: str) -> None:
-        """Best-effort metadata probe; OpenAI-compatible APIs need not expose limits."""
-        key: Tuple[str, str] = (str(self.client.base_url), model)
-        if key in _GATEWAY_MODEL_PROBES:
-            return
-        _GATEWAY_MODEL_PROBES.add(key)
-        try:
-            metadata = _model_payload(self.client.models.retrieve(model))
-        except Exception as error:
-            logger.info(
-                "CONTEXT_DIAGNOSTIC gateway model metadata unavailable for model=%s: %s",
-                model,
-                type(error).__name__,
-            )
-            return
-        limits = _context_metadata(metadata)
-        if limits:
-            logger.info(
-                "CONTEXT_DIAGNOSTIC gateway model=%s advertised_context_limits=%s",
-                model,
-                limits,
-            )
-        else:
-            logger.info(
-                "CONTEXT_DIAGNOSTIC gateway model=%s does not advertise a context-window field via /models/{model}",
-                model,
-            )
-
-    def _prompt_token_count(self, messages: List[Dict]) -> Tuple[Optional[int], str]:
-        """Count the serialized chat request with the official Qwen tokenizer if possible."""
-        tokenizer_model = self.llm_conf.get("context_tokenizer_model", None)
-        if tokenizer_model:
-            try:
-                from transformers import AutoTokenizer
-
-                tokenizer = AutoTokenizer.from_pretrained(
-                    tokenizer_model,
-                    local_files_only=bool(
-                        self.llm_conf.get("context_tokenizer_local_files_only", False)
-                    ),
-                )
-                token_ids = tokenizer.apply_chat_template(
-                    messages, tokenize=True, add_generation_prompt=True
-                )
-                if hasattr(token_ids, "tolist"):
-                    token_ids = token_ids.tolist()
-                if token_ids and isinstance(token_ids[0], list):
-                    token_ids = token_ids[0]
-                return len(token_ids), f"official-tokenizer:{tokenizer_model}"
-            except Exception as error:
-                logger.info(
-                    "CONTEXT_DIAGNOSTIC official tokenizer unavailable for model=%s: %s; falling back to estimate",
-                    tokenizer_model,
-                    type(error).__name__,
-                )
-        text = "\n".join(
-            str(message.get("content", "")) for message in messages
-        )
-        try:
-            import tiktoken
-
-            return len(tiktoken.get_encoding("cl100k_base").encode(text)), "estimate:tiktoken-cl100k"
-        except Exception:
-            return None, "unavailable"
-
-    def _log_context_diagnostics(
-        self, messages: List[Dict], request_params: Dict[str, Any]
-    ) -> None:
-        if not self.context_diagnostics:
-            return
-        model = str(request_params["model"])
-        self._gateway_context_probe(model)
-        prompt_tokens, tokenizer_source = self._prompt_token_count(messages)
-        text = "\n".join(str(message.get("content", "")) for message in messages)
-        max_tokens = request_params.get("max_tokens", "omitted; gateway default")
-        logger.info(
-            "CONTEXT_DIAGNOSTIC request model=%s messages=%d utf8_bytes=%d "
-            "prompt_tokens=%s tokenizer=%s requested_max_tokens=%s",
-            model,
-            len(messages),
-            len(text.encode("utf-8")),
-            prompt_tokens,
-            tokenizer_source,
-            max_tokens,
-        )
 
     def _validate_conf(self):
         if self.generation_params.stream:
@@ -277,7 +151,6 @@ class OpenAIChat(BaseLLM):
                 if key != "model" and value is not None
             },
         }
-        self._log_context_diagnostics(messages, request_params)
         completion = self.client.chat.completions.create(
             **request_params, timeout=request_timeout
         )

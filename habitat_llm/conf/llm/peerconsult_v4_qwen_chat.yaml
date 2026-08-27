@@ -14,16 +14,8 @@ assistant_tag: ''
 eot_tag: ''
 keep_message_history: False
 
-# Temporary smoke diagnostics.  The tokenizer is downloaded to the normal
-# Hugging Face cache when absent; failure only downgrades the count to an
-# explicitly labelled estimate and never blocks planning.
-context_diagnostics: True
-context_tokenizer_model: Qwen/Qwen3-VL-4B-Instruct
-context_tokenizer_local_files_only: False
-
 generation_params:
   model: ${oc.env:PARTNR_MODEL,qwen/qwen3-vl-4b}
-  # Keep the gateway default untouched during the diagnostic smoke.
   max_tokens: null
   temperature: 0
   top_p: 1
