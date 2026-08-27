@@ -81,5 +81,28 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(final[0][0], "Wait")
         self.assertEqual(reviews[0]["reason"], "planning_loop_guard")
 
+    def test_terminal_failure_is_retained_as_bounded_self_recovery_fact(self):
+        _, _, intents = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Pick", "input": "cup", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_failure",
+            "response": "Unexpected failure! - Failed to pick! Not close enough to the object.",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        card = self.board.decision_card(0)
+        self.assertIn("Pick[cup] failed", card)
+        self.assertIn("self_required_recovery=Navigate[cup]", card)
+        self.assertNotIn("Pick[cup] failed", self.board.decision_card(1))
+
+    def test_successful_required_navigation_clears_recovery(self):
+        self.board.required_recoveries[0] = "Navigate[cup]"
+        _, _, intents = self.board.review({0: _proposal(("Navigate", "cup", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Navigate", "input": "cup", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_success", "response": "Successful execution!",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.assertIn("self_required_recovery=none", self.board.decision_card(0))
+
 
 if __name__ == "__main__": unittest.main()

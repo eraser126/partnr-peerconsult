@@ -16,9 +16,10 @@ class PeerConsultBoard:
     PROTOCOL = "PeerConsultV4"
     _CLAIM_STAGES = {"acquire", "transport", "place", "state"}
 
-    def __init__(self, claim_ttl_decisions=3, max_targets=5, max_rooms=4, max_reviews=2):
+    def __init__(self, claim_ttl_decisions=3, max_targets=5, max_rooms=4, max_reviews=2, max_execution_facts=3):
         self.claim_ttl_decisions = claim_ttl_decisions
         self.max_targets, self.max_rooms, self.max_reviews = max_targets, max_rooms, max_reviews
+        self.max_execution_facts = max_execution_facts
         self.reset()
 
     def reset(self) -> None:
@@ -32,6 +33,8 @@ class PeerConsultBoard:
         self.current_intents: Dict[int, Dict[str, Any]] = {}
         self.execution_evidence: Dict[Tuple[int, int], Dict[str, Any]] = {}
         self._consumed_evidence: Dict[Tuple[int, int], bool] = {}
+        self.execution_facts: Dict[int, List[str]] = {0: [], 1: []}
+        self.required_recoveries: Dict[int, Optional[str]] = {0: None, 1: None}
         self.progress_versions, self.action_history = {0: 0, 1: 0}, {0: {}, 1: {}}
         self.pending_loop_guards: Dict[int, Optional[str]] = {0: None, 1: None}
         self.reviews: List[Dict[str, Any]] = []
@@ -71,12 +74,45 @@ class PeerConsultBoard:
         self.claims = {name: claim for name, claim in self.claims.items() if claim.get("task_id") != task_id}
         self.room_reservations = {room: claim for room, claim in self.room_reservations.items() if claim.get("task_id") != task_id}
 
+    @staticmethod
+    def _ticket_action(ticket: Mapping[str, Any]) -> str:
+        action, value = str(ticket.get("action") or "Action"), ticket.get("input")
+        return "{}[{}]".format(action, "" if value in {None, ""} else value)
+
+    def _record_execution_fact(self, uid: int, ticket: Mapping[str, Any]) -> None:
+        """Preserve bounded executor facts, never model thoughts or evaluator state."""
+        action = self._ticket_action(ticket)
+        response = " ".join(str(ticket.get("response") or "").split())[:160]
+        success = ticket.get("outcome") == "terminal_success"
+        fact = "{} {}{}".format(
+            action,
+            "succeeded" if success else "failed",
+            ": {}".format(response) if response else "",
+        )
+        facts = self.execution_facts.setdefault(uid, [])
+        facts.append(fact)
+        self.execution_facts[uid] = facts[-self.max_execution_facts :]
+
+        recovery = self.required_recoveries.get(uid)
+        if success and recovery == action:
+            self.required_recoveries[uid] = None
+        if (
+            not success
+            and str(ticket.get("action") or "").lower() == "pick"
+            and "not close enough" in response.lower()
+            and ticket.get("input")
+        ):
+            self.required_recoveries[uid] = "Navigate[{}]".format(ticket["input"])
+
     def _consume_evidence(self) -> None:
         for key, ticket in list(self.execution_evidence.items()):
             if self._consumed_evidence.get(key) or not ticket.get("terminal"):
                 continue
             self._consumed_evidence[key] = True
             task_id = ticket.get("task_id")
+            task = self.tasks.get(task_id or "", {})
+            uid = int(ticket.get("agent", task.get("agent", 0)))
+            self._record_execution_fact(uid, ticket)
             if not task_id or task_id not in self.tasks:
                 continue
             task, uid = self.tasks[task_id], int(self.tasks[task_id]["agent"])
@@ -245,6 +281,8 @@ class PeerConsultBoard:
             "peer_room_reservations={}".format(rooms or ["none"]),
             "validator_feedback={}".format(reviews or ["none"]),
             "loop_guard={}".format(self.pending_loop_guards[uid] or "none"),
+            "self_recent_execution={}".format(self.execution_facts[uid] or ["none"]),
+            "self_required_recovery={}".format(self.required_recoveries[uid] or "none"),
             "Use exact entity IDs from your private world description; never add a label such as room: before an ID.",
         ])
 
@@ -252,7 +290,9 @@ class PeerConsultBoard:
         for uid, ticket in planner_info.get("peerconsult_action_ticket", {}).items():
             key = (int(uid), int(ticket["id"]))
             if key not in self.execution_evidence or ticket.get("terminal"):
-                self.execution_evidence[key] = dict(ticket)
+                stored = dict(ticket)
+                stored["agent"] = int(uid)
+                self.execution_evidence[key] = stored
 
     def event(self, cards, proposals, reviews, final_actions, intents, planner_info):
         return {
