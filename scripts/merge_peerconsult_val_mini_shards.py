@@ -30,6 +30,11 @@ def main() -> None:
         default="data/datasets/partnr_episodes/v0_0/val_mini.json.gz",
         help="PARTNR episode split used by every array task",
     )
+    parser.add_argument(
+        "--method",
+        default="PeerConsult V2 / OpenAI-compatible API",
+        help="Method label written to the merged summary",
+    )
     args = parser.parse_args()
 
     run_dirs = sorted(Path().glob(args.run_glob))
@@ -83,7 +88,7 @@ def main() -> None:
 
     summary = {
         "benchmark": "PARTNR val_mini",
-        "method": "PeerConsult V2 / OpenAI-compatible API",
+        "method": args.method,
         "episodes": len(merged),
         "task_successes": successes,
         "task_failures": len(merged) - successes,

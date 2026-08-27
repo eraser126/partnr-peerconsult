@@ -50,28 +50,31 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
     ) -> Tuple[Dict[int, Any], Dict[str, Any], bool]:
         # Deliberately use only `world_graph`, never `full_world_graph` or metrics.
         self.board.observe(world_graph)
+        cards = {uid: self.board.decision_card(uid) for uid in self.planner}
         proposals: Dict[int, Dict[str, Any]] = {}
         assert isinstance(self.planner, dict)
         for uid, planner in sorted(self.planner.items()):
             if not hasattr(planner, "set_decision_card"):
                 raise TypeError("PeerConsult runner requires PeerConsultZeroShotReactPlanner")
-            planner.set_decision_card(self.board.decision_card(uid))
+            planner.set_decision_card(cards[uid])
             proposals[uid] = planner.prepare_proposal(instruction, observations, world_graph)
 
-        final_actions, reviews = self.board.review(proposals)
+        final_actions, reviews, intents = self.board.review(proposals)
         low_level_actions: Dict[int, Any] = {}
         planner_info: Dict[str, Any] = {}
         all_done = True
         for uid, planner in sorted(self.planner.items()):
             actions, info, is_done = planner.execute_proposal(
-                proposals[uid], final_actions[uid], observations
+                proposals[uid], final_actions[uid], observations,
+                review=next((review for review in reviews if review["agent"] == uid), None),
+                intent=intents[uid],
             )
             low_level_actions.update(actions)
             self._merge(planner_info, info)
             all_done = all_done and is_done
 
         self.board.record_execution_evidence(planner_info)
-        event = self.board.event(proposals, reviews, final_actions, planner_info)
+        event = self.board.event(cards, proposals, reviews, final_actions, intents, planner_info)
         # The JSONL file spans every episode in a val_mini run.  Attach the
         # public episode filename so PeerConsult decisions can be joined with
         # the official per-episode prompt, planner-log, and detailed-trace
