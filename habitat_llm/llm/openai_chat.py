@@ -38,6 +38,41 @@ def log_completion_usage(completion, attempt: str) -> None:
     )
 
 
+def log_request_metadata(request_params: Dict, attempt: str) -> None:
+    """Log request sizing metadata without recording prompt contents or secrets."""
+    message_summaries = []
+    total_text_chars = 0
+    total_utf8_bytes = 0
+    non_text_parts = 0
+    for message in request_params["messages"]:
+        role = str(message.get("role", "unknown"))
+        content = message.get("content", "")
+        if isinstance(content, str):
+            text_chars = len(content)
+            utf8_bytes = len(content.encode("utf-8"))
+        else:
+            # Multimodal payloads are intentionally counted as parts only: never
+            # write image URLs or base64 data to experiment logs.
+            text_chars = 0
+            utf8_bytes = 0
+            non_text_parts += len(content) if isinstance(content, list) else 1
+        total_text_chars += text_chars
+        total_utf8_bytes += utf8_bytes
+        message_summaries.append(f"{role}:{text_chars}c/{utf8_bytes}b")
+    logger.info(
+        "LLM %s metadata: model=%s messages=%d roles_and_sizes=%s "
+        "text_chars=%d utf8_bytes=%d non_text_parts=%d requested_max_tokens=%s",
+        attempt,
+        request_params.get("model"),
+        len(request_params["messages"]),
+        ",".join(message_summaries),
+        total_text_chars,
+        total_utf8_bytes,
+        non_text_parts,
+        request_params.get("max_tokens", "omitted"),
+    )
+
+
 def generate_message(multimodal_prompt, image_detail="auto"):
     # Converts the multimodal prompt to the OpenAI format.
     content = []
@@ -151,6 +186,7 @@ class OpenAIChat(BaseLLM):
                 if key != "model" and value is not None
             },
         }
+        log_request_metadata(request_params, "initial request")
         completion = self.client.chat.completions.create(
             **request_params, timeout=request_timeout
         )
