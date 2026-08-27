@@ -16,7 +16,9 @@ keep_message_history: False
 
 generation_params:
   model: ${oc.env:PARTNR_MODEL,qwen/qwen3-vl-4b}
-  max_tokens: null
+  # Action planning responses are normally short.  This also leaves room for
+  # the input prompt when the gateway enforces a small effective context window.
+  max_tokens: 256
   temperature: 0
   top_p: 1
   stream: False
