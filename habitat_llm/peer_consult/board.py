@@ -16,10 +16,11 @@ class PeerConsultBoard:
     PROTOCOL = "PeerConsultV4"
     _CLAIM_STAGES = {"acquire", "transport", "place", "state"}
 
-    def __init__(self, claim_ttl_decisions=3, max_targets=5, max_rooms=4, max_reviews=2, max_execution_facts=3):
+    def __init__(self, claim_ttl_decisions=3, max_targets=5, max_rooms=4, max_reviews=2, max_execution_facts=3, placement_lock_ttl=12):
         self.claim_ttl_decisions = claim_ttl_decisions
         self.max_targets, self.max_rooms, self.max_reviews = max_targets, max_rooms, max_reviews
         self.max_execution_facts = max_execution_facts
+        self.placement_lock_ttl = placement_lock_ttl
         self.reset()
 
     def reset(self) -> None:
@@ -27,6 +28,7 @@ class PeerConsultBoard:
         self.physical_owners: Dict[str, int] = {}
         self.claims: Dict[str, Dict[str, Any]] = {}
         self.room_reservations: Dict[str, Dict[str, Any]] = {}
+        self.settled_placements: Dict[str, Dict[str, Any]] = {}
         self.tasks: Dict[str, Dict[str, Any]] = {}
         self.active_tasks: Dict[int, Optional[str]] = {0: None, 1: None}
         self.active_executions: Dict[int, Dict[str, Any]] = {}
@@ -96,13 +98,29 @@ class PeerConsultBoard:
         recovery = self.required_recoveries.get(uid)
         if success and recovery == action:
             self.required_recoveries[uid] = None
-        if (
-            not success
-            and str(ticket.get("action") or "").lower() == "pick"
-            and "not close enough" in response.lower()
-            and ticket.get("input")
-        ):
-            self.required_recoveries[uid] = "Navigate[{}]".format(ticket["input"])
+
+        action_name = str(ticket.get("action") or "").lower()
+        action_input = str(ticket.get("input") or "")
+        values = [value.strip() for value in action_input.split(",")]
+        if success and action_name in {"place", "rearrange"} and len(values) >= 3:
+            resource, relation, destination = values[:3]
+            if resource and relation.lower() in {"on", "within"} and destination:
+                self.settled_placements[resource] = {
+                    "agent": uid,
+                    "destination": destination,
+                    "relation": relation.lower(),
+                    "step": self.protocol_step,
+                }
+                self._event(uid, "placement_settled", "{}:{}:{}".format(resource, relation.lower(), destination))
+
+        recovery_target = None
+        if not success and "not close enough" in response.lower():
+            if action_name == "pick" and action_input:
+                recovery_target = action_input
+            elif action_name in {"place", "rearrange"} and len(values) >= 3:
+                recovery_target = values[2]
+        if recovery_target:
+            self.required_recoveries[uid] = "Navigate[{}]".format(recovery_target)
 
     def _consume_evidence(self) -> None:
         for key, ticket in list(self.execution_evidence.items()):
@@ -138,6 +156,17 @@ class PeerConsultBoard:
             live = any(value.get("room_scope") == room for value in self.active_executions.values())
             if not live and self.protocol_step - claim["step"] > self.claim_ttl_decisions:
                 self.room_reservations.pop(room, None)
+        for resource, placement in list(self.settled_placements.items()):
+            if self.protocol_step - placement["step"] > self.placement_lock_ttl:
+                self.settled_placements.pop(resource, None)
+
+    @staticmethod
+    def _matches_required_recovery(intent: Mapping[str, Any], recovery: Optional[str]) -> bool:
+        if not recovery:
+            return True
+        action = str(intent.get("action", (None, None, None))[0] or "")
+        value = str(intent.get("action", (None, None, None))[1] or "")
+        return "{}[{}]".format(action, value) == recovery
 
     def observe(self, world_graphs: Mapping[int, Any]) -> None:
         self.tick += 1
@@ -183,6 +212,9 @@ class PeerConsultBoard:
         if task_id and self.tasks.get(task_id, {}).get("status") != "completed":
             self.tasks[task_id]["status"] = "suspended"
             self._release(task_id)
+        if self.active_tasks.get(uid) == task_id:
+            self.active_tasks[uid] = None
+        self.active_executions.pop(uid, None)
         reviews.append({"step": self.protocol_step, "agent": uid, "reason": reason, "task_id": task_id, "verdict": "revise"})
 
     @staticmethod
@@ -205,6 +237,8 @@ class PeerConsultBoard:
                 self._reject(uid, intent, final, reviews, "completion_unavailable")
             elif self.tasks.get(task_id or "", {}).get("status") == "completed":
                 self._reject(uid, intent, final, reviews, "completed_task")
+            elif not self._matches_required_recovery(intent, self.required_recoveries.get(uid)):
+                self._reject(uid, intent, final, reviews, "required_recovery")
             elif self.pending_loop_guards.get(uid) == intent.get("action_identity"):
                 self.pending_loop_guards[uid] = None
                 self._reject(uid, intent, final, reviews, "planning_loop_guard")
@@ -220,10 +254,26 @@ class PeerConsultBoard:
                 for uid in contenders:
                     if uid != winner:
                         self._reject(uid, intents[uid], final, reviews, "duplicate_claim")
+        room_grouped: Dict[str, List[int]] = {}
+        for uid in mutable:
+            if final[uid] == proposals[uid]["high_level_action"]:
+                room = intents[uid].get("room_scope")
+                if room:
+                    room_grouped.setdefault(str(room), []).append(uid)
+        for room, contenders in room_grouped.items():
+            if len(contenders) > 1:
+                winner = self._winner("room:" + room, self.protocol_step, contenders)
+                for uid in contenders:
+                    if uid != winner:
+                        self._reject(uid, intents[uid], final, reviews, "duplicate_room_reservation")
         for uid in sorted(mutable):
             if final[uid] != proposals[uid]["high_level_action"]:
                 continue
             intent, resource = intents[uid], intents[uid].get("resource")
+            settled = self.settled_placements.get(str(resource)) if resource else None
+            if settled and intent.get("name") in {"pick", "rearrange"}:
+                self._reject(uid, intent, final, reviews, "settled_relation")
+                continue
             if intent.get("stage") in self._CLAIM_STAGES and resource:
                 if intent.get("stage") in {"acquire", "transport"} and self._held(uid):
                     self._reject(uid, intent, final, reviews, "no_free_hand")
@@ -279,6 +329,10 @@ class PeerConsultBoard:
             "peer_public_tasks={}".format(self._tasks(peer, "in_progress") or ["none"]),
             "peer_claims={}".format(claims or ["none"]),
             "peer_room_reservations={}".format(rooms or ["none"]),
+            "settled_placements={}".format(
+                ["{}:{}:{}".format(resource, value["relation"], value["destination"])
+                 for resource, value in sorted(self.settled_placements.items())][-self.max_targets:] or ["none"]
+            ),
             "validator_feedback={}".format(reviews or ["none"]),
             "loop_guard={}".format(self.pending_loop_guards[uid] or "none"),
             "self_recent_execution={}".format(self.execution_facts[uid] or ["none"]),

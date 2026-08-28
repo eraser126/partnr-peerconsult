@@ -104,5 +104,42 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.board.observe({0: self.graph, 1: self.graph})
         self.assertIn("self_required_recovery=none", self.board.decision_card(0))
 
+    def test_same_room_explore_is_atomically_reserved(self):
+        final, reviews, _ = self.board.review({
+            0: _proposal(("Explore", "kitchen_0", None)),
+            1: _proposal(("Explore", "kitchen_0", None)),
+        })
+        self.assertEqual(sum(action[0] == "Explore" for action in final.values()), 1)
+        self.assertEqual(sum(action[0] == "Wait" for action in final.values()), 1)
+        self.assertEqual(reviews[0]["reason"], "duplicate_room_reservation")
+
+    def test_place_distance_failure_requires_navigation_before_next_action(self):
+        place = ("Place", "cup,on,table_0,None,None", None)
+        _, _, intents = self.board.review({0: _proposal(place), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Place", "input": "cup,on,table_0,None,None",
+            "task_id": intents[0]["task_id"], "terminal": True, "outcome": "terminal_failure",
+            "response": "Unexpected failure! - Failed to place! Not close enough to table_0 or occluded.",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        final, reviews, _ = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})
+        self.assertEqual(final[0][0], "Wait")
+        self.assertEqual(reviews[0]["reason"], "required_recovery")
+        final, _, _ = self.board.review({0: _proposal(("Navigate", "table_0", None)), 1: _proposal(("Wait", None, None), False)})
+        self.assertEqual(final[0][0], "Navigate")
+
+    def test_successful_place_temporarily_blocks_undoing_the_relation(self):
+        place = ("Place", "cup,on,table_0,None,None", None)
+        _, _, intents = self.board.review({0: _proposal(place), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Place", "input": "cup,on,table_0,None,None",
+            "task_id": intents[0]["task_id"], "terminal": True, "outcome": "terminal_success",
+            "response": "Successful execution!",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        final, reviews, _ = self.board.review({0: _proposal(("Wait", None, None), False), 1: _proposal(("Pick", "cup", None))})
+        self.assertEqual(final[1][0], "Wait")
+        self.assertEqual(reviews[0]["reason"], "settled_relation")
+
 
 if __name__ == "__main__": unittest.main()

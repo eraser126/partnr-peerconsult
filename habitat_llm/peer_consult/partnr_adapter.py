@@ -128,8 +128,8 @@ def canonicalize_partnr_action(
             {
                 "stage": stage,
                 "resource": obj,
-                "task_id": "{}:{}:{}:{}:{}:{}".format(
-                    stage, obj, relation.lower(), destination, constraint.lower(), reference or "none"
+                "task_id": "agent{}:{}:{}:{}:{}:{}:{}".format(
+                    agent_uid, stage, obj, relation.lower(), destination, constraint.lower(), reference or "none"
                 ),
                 "action_identity": "{}|{}".format(stage, _call(name, values)),
             }
@@ -149,7 +149,7 @@ def canonicalize_partnr_action(
             {
                 "stage": stage,
                 "resource": target,
-                "task_id": "{}:{}:{}".format(stage, lowered, target),
+                "task_id": "agent{}:{}:{}:{}".format(agent_uid, stage, lowered, target),
                 "action_identity": "{}|{}".format(stage, _call(name, values)),
             }
         )
@@ -166,7 +166,7 @@ def canonicalize_partnr_action(
                 "stage": "explore",
                 "resource": room,
                 "room_scope": room,
-                "task_id": "explore:{}".format(room),
+                "task_id": "agent{}:explore:{}".format(agent_uid, room),
                 "action_identity": "explore|{}".format(_call(name, values)),
             }
         )
@@ -185,7 +185,7 @@ def canonicalize_partnr_action(
                     "stage": "explore",
                     "resource": target,
                     "room_scope": target,
-                    "task_id": "explore:{}".format(target),
+                    "task_id": "agent{}:explore:{}".format(agent_uid, target),
                     "action_identity": "navigate-room|{}".format(_call(name, values)),
                 }
             )
@@ -194,7 +194,7 @@ def canonicalize_partnr_action(
                 {
                     "stage": "navigate",
                     "resource": target,
-                    "task_id": "navigate:{}".format(target),
+                    "task_id": "agent{}:navigate:{}".format(agent_uid, target),
                     "action_identity": "navigate|{}".format(_call(name, values)),
                 }
             )
