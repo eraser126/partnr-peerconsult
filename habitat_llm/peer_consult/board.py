@@ -182,8 +182,8 @@ class PeerConsultBoard:
                 "placed",
                 "{} {}".format(relation.lower(), destination),
             )
-        elif not success and action_name in {"pick", "place", "rearrange"} and values and values[0]:
-            self._remember_object(values[0], uid, "needs_recovery", "{} failed".format(action_name))
+        # Failures stay in `execution_facts[uid]`: they are useful private
+        # recovery context, but are not durable public object facts.
         if success and action_name in {"place", "rearrange"} and len(values) >= 3:
             resource, relation, destination = values[:3]
             if resource and relation.lower() in {"on", "within"} and destination:
@@ -488,7 +488,7 @@ class PeerConsultBoard:
         rooms = sorted(name for name, value in self.room_reservations.items() if value.get("agent") == peer)
         return "\n".join([
             "[PeerConsult V4 Decision Card]",
-            "strict_observation=true; completion_oracle=unavailable_to_planner",
+            "strict_observation=true; completion_oracle=official_env_runner_only",
             "self_held={}".format(self._held(uid) or ["none"]),
             "self_active_tasks={}".format(self._tasks(uid, "in_progress") or ["none"]),
             "self_suspended_tasks={}".format(self._tasks(uid, "suspended") or ["none"]),

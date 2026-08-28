@@ -3,7 +3,14 @@
 import unittest
 
 from habitat_llm.peer_consult.board import PeerConsultBoard
-from habitat_llm.peer_consult.partnr_adapter import canonicalize_partnr_action, execution_outcome
+from habitat_llm.peer_consult.partnr_adapter import (
+    build_local_action_candidates,
+    canonicalize_partnr_action,
+    execution_outcome,
+)
+from habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner import (
+    PeerConsultDecentralizedEvaluationRunner,
+)
 
 
 class _Node:
@@ -19,6 +26,24 @@ class _Graph:
     def get_all_furnitures(self): return self.furniture
     def get_all_receptacles(self): return []
     def is_object_with_agent(self, obj, who): return obj.name in (self.robot if who == "robot" else self.human)
+
+
+class _Measure:
+    def __init__(self, value):
+        self.value, self.update_calls = value, 0
+    def update_metric(self, **kwargs): self.update_calls += 1
+    def get_metric(self): return self.value
+
+
+class _CompletionEnv:
+    def __init__(self, success):
+        self.task = type("Task", (), {})()
+        self.task.measurements = type("Measurements", (), {})()
+        self.task.measurements.measures = {
+            name: _Measure(success if name == "task_state_success" else 0)
+            for name in PeerConsultDecentralizedEvaluationRunner._COMPLETION_MEASURES
+        }
+        self.current_episode = object()
 
 
 def _proposal(action, new=True):
@@ -71,7 +96,30 @@ class PeerConsultV4Tests(unittest.TestCase):
 
     def test_structured_outcome_and_no_privileged_completion(self):
         self.assertEqual(execution_outcome({"status": "success"}, True), "terminal_success")
-        self.assertIn("completion_oracle=unavailable", self.board.decision_card(0))
+        self.assertIn("completion_oracle=official_env_runner_only", self.board.decision_card(0))
+
+    def test_candidate_domains_are_local_complete_and_not_ranked(self):
+        candidates = build_local_action_candidates(
+            0, self.graph, {"Explore", "Navigate", "Pick", "Rearrange", "Place", "Wait"}
+        )
+        self.assertIn("Explore[room]: room in [hall_0, kitchen_0]", candidates)
+        self.assertIn("Navigate[target]: target in [book, cup, hall_0, kitchen_0, table_0]", candidates)
+        self.assertIn("Rearrange[object,relation,destination,constraint,reference]", candidates)
+        self.assertIn("object in [book, cup]", candidates)
+        self.assertIn("Place[held_object,relation,destination,constraint,reference]", candidates)
+        self.assertIn("held_object in [none]", candidates)
+        self.assertIn("not a priority order", candidates)
+
+    def test_official_completion_adapter_reads_only_success_bit(self):
+        runner = object.__new__(PeerConsultDecentralizedEvaluationRunner)
+        curr_env = _CompletionEnv(success=1.0)
+        runner.env_interface = type("Interface", (), {})()
+        runner.env_interface.env = type("Outer", (), {})()
+        runner.env_interface.env.env = type("Middle", (), {})()
+        runner.env_interface.env.env.env = type("Inner", (), {"_env": curr_env})()
+        self.assertTrue(runner._official_completion_reached())
+        for measure in curr_env.task.measurements.measures.values():
+            self.assertEqual(measure.update_calls, 1)
 
     def test_loop_guard_rejects_exact_repeat_once(self):
         proposal = {0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)}
@@ -94,6 +142,7 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertIn("Pick[cup] failed", card)
         self.assertIn("self_required_recovery=Navigate[cup]", card)
         self.assertNotIn("Pick[cup] failed", self.board.decision_card(1))
+        self.assertNotIn("cup: needs_recovery", self.board.decision_card(1))
 
     def test_successful_required_navigation_clears_recovery(self):
         self.board.enforce_required_recovery = True

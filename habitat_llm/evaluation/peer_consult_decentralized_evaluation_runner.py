@@ -15,6 +15,15 @@ from habitat_llm.peer_consult import PeerConsultBoard
 class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
     """Review high-level proposals before unchanged PARTNR skills execute."""
 
+    _COMPLETION_MEASURES = (
+        "auto_eval_proposition_tracker",
+        "task_constraint_validation",
+        "task_percent_complete",
+        "task_state_success",
+        "task_evaluation_log",
+        "task_explanation",
+    )
+
     def __init__(self, evaluation_runner_config_arg, env_arg) -> None:
         super().__init__(evaluation_runner_config_arg, env_arg)
         conf = evaluation_runner_config_arg.get("peerconsult", {})
@@ -23,6 +32,7 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             max_targets=int(conf.get("max_targets", 5)),
             max_rooms=int(conf.get("max_rooms", 4)),
             max_reviews=int(conf.get("max_reviews", 2)),
+            max_execution_facts=int(conf.get("max_execution_facts", 6)),
             max_ledger_entries=int(conf.get("max_ledger_entries", 8)),
             max_public_report_chars=int(conf.get("max_public_report_chars", 480)),
             publish_exploration_reports=bool(conf.get("publish_exploration_reports", False)),
@@ -51,11 +61,54 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
         with open(self._peer_log_path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
+    def _official_completion_reached(self) -> bool:
+        """Query only PARTNR's official success bit, never its goal explanation.
+
+        The base evaluation loop otherwise ends only when a planner emits
+        Done[].  V4 deliberately keeps that decision out of the LLM, so this
+        adapter provides the required runner-side completion boundary.
+        """
+        try:
+            curr_env = self.env_interface.env.env.env._env
+            measures = curr_env.task.measurements.measures
+            for measure_name in self._COMPLETION_MEASURES:
+                if measure_name in measures:
+                    measures[measure_name].update_metric(
+                        task=curr_env.task, episode=curr_env.current_episode
+                    )
+            success = measures.get("task_state_success")
+            return bool(success and success.get_metric())
+        except (AttributeError, KeyError):
+            # Preserve benchmark execution if a non-PARTNR environment omits
+            # this optional official metric.
+            return False
+
     def get_low_level_actions(
         self, instruction: str, observations: Dict[str, Any], world_graph: Dict[int, Any]
     ) -> Tuple[Dict[int, Any], Dict[str, Any], bool]:
         # Deliberately use only `world_graph`, never `full_world_graph` or metrics.
         self.board.observe(world_graph)
+        if self._official_completion_reached():
+            completion_info: Dict[str, Any] = {
+                "replanned": {uid: False for uid in self.planner},
+                "replan_required": {uid: False for uid in self.planner},
+                "responses": {},
+                "is_done": {uid: True for uid in self.planner},
+                "high_level_actions": {},
+                "peerconsult_execution_actions": {},
+                "peerconsult_action_ticket": {},
+                "peerconsult_progress_signature": self.board.progress_signature(),
+                "completion_adapter": "official_env_success",
+            }
+            self._write_event(
+                {
+                    "protocol": self.board.PROTOCOL,
+                    "tick": self.board.tick,
+                    "episode_filename": self.episode_filename,
+                    "completion_adapter": "official_env_success",
+                }
+            )
+            return {}, completion_info, True
         cards = {uid: self.board.decision_card(uid) for uid in self.planner}
         proposals: Dict[int, Dict[str, Any]] = {}
         assert isinstance(self.planner, dict)
