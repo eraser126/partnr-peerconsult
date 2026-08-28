@@ -75,17 +75,64 @@ def _is_held_by_either_agent(world_graph: Any, obj: Any) -> bool:
         return False
 
 
+def _is_held_by_agent(world_graph: Any, obj: Any, agent_uid: int) -> bool:
+    """Read only the calling agent's locally observed hand state."""
+    agent_type = {0: "robot", 1: "human"}.get(int(agent_uid))
+    if agent_type is None:
+        return False
+    try:
+        return bool(world_graph.is_object_with_agent(obj, agent_type))
+    except Exception:
+        return False
+
+
+def rewrite_held_rearrange_to_place(
+    agent_uid: int, action: Action, world_graph: Any
+) -> tuple[Action, Optional[str]]:
+    """Apply the PARTNR skill precondition before an action reaches the board.
+
+    Rearrange is an atomic navigation-pick-place skill and therefore cannot
+    operate on an object already held by the same agent.  In that exact case,
+    the equivalent Place action is the only executable continuation.  This is
+    a deterministic safety rule over the agent's own observed hand state; it
+    neither selects an object nor reads peer/evaluator state.
+    """
+    name, action_input, parse_error = action
+    if str(name or "").strip().lower() != "rearrange" or parse_error:
+        return action, None
+    values = _parts(action_input)
+    if len(values) != 5 or not values[0]:
+        return action, None
+    try:
+        obj = next(
+            item
+            for item in world_graph.get_all_objects()
+            if str(getattr(item, "name", "")) == values[0]
+        )
+    except Exception:
+        return action, None
+    if not _is_held_by_agent(world_graph, obj, agent_uid):
+        return action, None
+    rewritten = ("Place", ",".join(values), None)
+    return rewritten, "held_object_rearrange_rewritten_to_place"
+
+
 def build_grounded_transport_candidates(
-    instruction: str, world_graph: Any, available_actions: Iterable[str], limit: int = 12
+    instruction: str,
+    world_graph: Any,
+    available_actions: Iterable[str],
+    limit: int = 12,
+    agent_uid: int = 0,
 ) -> str:
-    """Offer bounded copy-ready Rearrange actions grounded in local facts.
+    """Offer bounded copy-ready transport actions grounded in local facts.
 
     This is a planner-side aid, not a board policy: it matches task words to
     locally observed entity names and never sees evaluator or peer-only state.
     The complete legal domains remain available separately.
     """
-    if "rearrange" not in {str(action).lower() for action in available_actions}:
-        return "[Grounded transport candidates]\n- Rearrange is unavailable to this agent."
+    tools = {str(action).lower() for action in available_actions}
+    if not ({"rearrange", "place"} & tools):
+        return "[Grounded transport candidates]\n- Transport actions are unavailable to this agent."
     task_tokens = _tokens(instruction)
     try:
         objects = list(world_graph.get_all_objects())
@@ -95,11 +142,17 @@ def build_grounded_transport_candidates(
     except Exception:
         return "[Grounded transport candidates]\n- No local object/furniture facts yet."
 
-    relevant_objects = [
+    unheld_objects = [
         obj
         for obj in objects
         if _tokens(getattr(obj, "name", "")) & task_tokens
         and not _is_held_by_either_agent(world_graph, obj)
+    ]
+    held_objects = [
+        obj
+        for obj in objects
+        if _tokens(getattr(obj, "name", "")) & task_tokens
+        and _is_held_by_agent(world_graph, obj, agent_uid)
     ]
     target_furniture = [
         item for item in furniture if _tokens(getattr(item, "name", "")) & task_tokens
@@ -115,24 +168,40 @@ def build_grounded_transport_candidates(
         target_furniture = room_matched
     relation = "within" if {"inside", "within"} & task_tokens else "on"
     actions = []
-    for obj in sorted(relevant_objects, key=lambda item: str(getattr(item, "name", ""))):
+    # A held object cannot use Rearrange, whose composite skill starts with a
+    # pick.  Offer Place first so the copy-ready option matches the real skill
+    # precondition, then offer Rearrange only for unheld objects.
+    for obj in sorted(held_objects, key=lambda item: str(getattr(item, "name", ""))):
         for destination in sorted(target_furniture, key=lambda item: str(getattr(item, "name", ""))):
-            actions.append(
-                "Rearrange[{},{},{},None,None]".format(
-                    getattr(obj, "name", ""), relation, getattr(destination, "name", "")
+            if "place" in tools:
+                actions.append(
+                    "Place[{},{},{},None,None]".format(
+                        getattr(obj, "name", ""), relation, getattr(destination, "name", "")
+                    )
                 )
-            )
+            if len(actions) >= limit:
+                break
+        if len(actions) >= limit:
+            break
+    for obj in sorted(unheld_objects, key=lambda item: str(getattr(item, "name", ""))):
+        for destination in sorted(target_furniture, key=lambda item: str(getattr(item, "name", ""))):
+            if "rearrange" in tools:
+                actions.append(
+                    "Rearrange[{},{},{},None,None]".format(
+                        getattr(obj, "name", ""), relation, getattr(destination, "name", "")
+                    )
+                )
             if len(actions) >= limit:
                 break
         if len(actions) >= limit:
             break
     header = "[Grounded transport candidates]"
     if not actions:
-        return header + "\n- No task-matched unheld object and destination pair is locally known yet."
+        return header + "\n- No task-matched movable or held object and destination pair is locally known yet."
     return "\n".join(
         [
             header,
-            "Each option is a complete navigation-pick-place skill. Select only an option matching the instruction; these are not priority-ranked.",
+            "Rearrange is for an unheld object; Place is for an object held by you. Select only an option matching the instruction; these are not priority-ranked.",
             *["- {}".format(action) for action in actions],
         ]
     )

@@ -8,6 +8,7 @@ from habitat_llm.peer_consult.partnr_adapter import (
     build_local_action_candidates,
     canonicalize_partnr_action,
     execution_outcome,
+    rewrite_held_rearrange_to_place,
 )
 from habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner import (
     PeerConsultDecentralizedEvaluationRunner,
@@ -151,6 +152,42 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertIn("Rearrange[candle_holder_1,on,table_10,None,None]", candidates)
         self.assertIn("Rearrange[plant_container_2,on,table_10,None,None]", candidates)
         self.assertNotIn("Rearrange[box_3", candidates)
+
+    def test_held_task_object_gets_place_candidate_not_rearrange(self):
+        graph = _Graph(
+            objects=["plant_container_2", "candle_0"],
+            furniture=["table_10", "table_30"],
+            robot=["plant_container_2"],
+        )
+        candidates = build_grounded_transport_candidates(
+            "Move the plant and candle to the table.",
+            graph,
+            {"Rearrange", "Place"},
+            agent_uid=0,
+        )
+        self.assertIn("Place[plant_container_2,on,table_10,None,None]", candidates)
+        self.assertNotIn("Rearrange[plant_container_2", candidates)
+        self.assertIn("Rearrange[candle_0,on,table_10,None,None]", candidates)
+
+    def test_held_rearrange_is_rewritten_to_place(self):
+        graph = _Graph(
+            objects=["plant_container_2"], furniture=["table_10"], robot=["plant_container_2"]
+        )
+        action, reason = rewrite_held_rearrange_to_place(
+            0, ("Rearrange", "plant_container_2,on,table_10,None,None", None), graph
+        )
+        self.assertEqual(action, ("Place", "plant_container_2,on,table_10,None,None", None))
+        self.assertEqual(reason, "held_object_rearrange_rewritten_to_place")
+
+    def test_peer_held_rearrange_is_not_rewritten(self):
+        graph = _Graph(
+            objects=["plant_container_2"], furniture=["table_10"], human=["plant_container_2"]
+        )
+        action, reason = rewrite_held_rearrange_to_place(
+            0, ("Rearrange", "plant_container_2,on,table_10,None,None", None), graph
+        )
+        self.assertEqual(action[0], "Rearrange")
+        self.assertIsNone(reason)
 
     def test_official_completion_adapter_reads_only_success_bit(self):
         runner = object.__new__(PeerConsultDecentralizedEvaluationRunner)

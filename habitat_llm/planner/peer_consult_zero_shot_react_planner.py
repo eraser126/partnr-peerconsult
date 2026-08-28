@@ -11,6 +11,7 @@ from habitat_llm.peer_consult.partnr_adapter import (
     build_local_action_candidates,
     canonicalize_partnr_action,
     execution_outcome,
+    rewrite_held_rearrange_to_place,
 )
 from habitat_llm.planner.zero_shot_react_planner import ZeroShotReactPlanner
 
@@ -35,7 +36,10 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
             self._agents[0].uid, world_graph, self._agents[0].tools.keys()
         )
         params["grounded_transport_candidates"] = build_grounded_transport_candidates(
-            input_instruction, world_graph, self._agents[0].tools.keys()
+            input_instruction,
+            world_graph,
+            self._agents[0].tools.keys(),
+            agent_uid=self._agents[0].uid,
         )
         return self.prompt.format(**params), params
 
@@ -55,7 +59,10 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         actions = self.actions_parser(self.agents, llm_response, self.params)
         uid = self._agents[0].uid
         action = actions.get(uid, (None, None, "No action could be parsed from the LLM response."))
+        action, rewrite_reason = rewrite_held_rearrange_to_place(uid, action, graph)
         intent = canonicalize_partnr_action(uid, action, graph)
+        if rewrite_reason:
+            intent["rule_rewrite"] = rewrite_reason
         if intent.get("error"):
             return (None, None, str(intent["error"])), None
         return tuple(intent["action"]), intent
