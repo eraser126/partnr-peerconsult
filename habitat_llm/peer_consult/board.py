@@ -26,6 +26,10 @@ class PeerConsultBoard:
         placement_lock_ttl=12,
         max_ledger_entries=8,
         max_public_report_chars=480,
+        publish_exploration_reports=False,
+        enforce_room_exploration_dedup=False,
+        enforce_required_recovery=False,
+        enforce_placement_stability=False,
     ):
         self.claim_ttl_decisions = claim_ttl_decisions
         self.max_targets, self.max_rooms, self.max_reviews = max_targets, max_rooms, max_reviews
@@ -33,6 +37,12 @@ class PeerConsultBoard:
         self.placement_lock_ttl = placement_lock_ttl
         self.max_ledger_entries = max_ledger_entries
         self.max_public_report_chars = max_public_report_chars
+        # These are optional PARTNR research aids, not V4 core rules.  Core
+        # coordination may reject only factual conflicts and safety violations.
+        self.publish_exploration_reports = publish_exploration_reports
+        self.enforce_room_exploration_dedup = enforce_room_exploration_dedup
+        self.enforce_required_recovery = enforce_required_recovery
+        self.enforce_placement_stability = enforce_placement_stability
         self.reset()
 
     def reset(self) -> None:
@@ -152,7 +162,14 @@ class PeerConsultBoard:
             self.explored_rooms[action_input] = {
                 "agent": uid,
                 "step": self.protocol_step,
-                "report": self._public_room_report(raw_response, self.max_public_report_chars),
+                # Completion of the Explore task is a public lifecycle fact.
+                # Its raw observation remains private unless an experiment
+                # explicitly opts into publication.
+                "report": (
+                    self._public_room_report(raw_response, self.max_public_report_chars)
+                    if self.publish_exploration_reports
+                    else None
+                ),
             }
             self._event(uid, "room_explored", action_input)
         if success and action_name == "pick" and action_input:
@@ -184,7 +201,7 @@ class PeerConsultBoard:
                 recovery_target = action_input
             elif action_name in {"place", "rearrange"} and len(values) >= 3:
                 recovery_target = values[2]
-        if recovery_target:
+        if recovery_target and self.enforce_required_recovery:
             self.required_recoveries[uid] = "Navigate[{}]".format(recovery_target)
 
     def _consume_evidence(self) -> None:
@@ -305,7 +322,10 @@ class PeerConsultBoard:
                 self._reject(uid, intent, final, reviews, "completion_unavailable")
             elif self.tasks.get(task_id or "", {}).get("status") == "completed":
                 self._reject(uid, intent, final, reviews, "completed_task")
-            elif not self._matches_required_recovery(intent, self.required_recoveries.get(uid)):
+            elif (
+                self.enforce_required_recovery
+                and not self._matches_required_recovery(intent, self.required_recoveries.get(uid))
+            ):
                 self._reject(uid, intent, final, reviews, "required_recovery")
             elif self.pending_loop_guards.get(uid) == intent.get("action_identity"):
                 self.pending_loop_guards[uid] = None
@@ -339,7 +359,11 @@ class PeerConsultBoard:
                 continue
             intent, resource = intents[uid], intents[uid].get("resource")
             settled = self.settled_placements.get(str(resource)) if resource else None
-            if settled and intent.get("name") in {"pick", "rearrange"}:
+            if (
+                self.enforce_placement_stability
+                and settled
+                and intent.get("name") in {"pick", "rearrange"}
+            ):
                 self._reject(uid, intent, final, reviews, "settled_relation")
                 continue
             if intent.get("stage") in self._CLAIM_STAGES and resource:
@@ -357,7 +381,11 @@ class PeerConsultBoard:
                 self._reject(uid, intent, final, reviews, "room_reservation")
                 continue
             explored = self.explored_rooms.get(str(room)) if room else None
-            if explored and explored.get("agent") != uid:
+            if (
+                self.enforce_room_exploration_dedup
+                and explored
+                and explored.get("agent") != uid
+            ):
                 self._reject(uid, intent, final, reviews, "room_already_reported")
         for uid, intent in intents.items():
             self.current_intents[uid] = dict(intent)
@@ -397,10 +425,33 @@ class PeerConsultBoard:
         )[: self.max_rooms]
 
     def _room_reports(self) -> List[str]:
+        if not self.publish_exploration_reports:
+            return []
         entries = []
         for room, value in sorted(self.explored_rooms.items(), key=lambda item: item[1]["step"], reverse=True):
-            entries.append("{} by agent{}: {}".format(room, value["agent"], value["report"]))
+            if value.get("report"):
+                entries.append("{} by agent{}: {}".format(room, value["agent"], value["report"]))
         return entries[: self.max_rooms]
+
+    def progress_signature(self) -> tuple:
+        """Return monotonic, public task facts for the no-progress guard.
+
+        This deliberately excludes raw world-graph churn and failed actions.
+        It changes only after an accepted task produces a positive public fact.
+        """
+        completed = tuple(sorted(task_id for task_id, task in self.tasks.items() if task.get("status") == "completed"))
+        # A current owner map is not monotonic (placing an object removes an
+        # owner), so use the positive ownership/completion version instead.
+        progress_versions = tuple(sorted(self.progress_versions.items()))
+        explored = tuple(sorted(self.explored_rooms))
+        ledger = tuple(
+            sorted(
+                (resource, value["state"], value["detail"])
+                for resource, value in self.object_ledger.items()
+                if value.get("state") in {"held", "placed"}
+            )
+        )
+        return completed, progress_versions, explored, ledger
 
     def _ledger(self) -> List[str]:
         entries = []

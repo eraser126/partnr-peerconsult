@@ -714,9 +714,11 @@ class EvaluationRunner:
                     % (elapsed_seconds, guard_max_elapsed_seconds)
                 )
             elif guard_enabled and self._is_replanning_decision(planner_info):
-                signature = self._observable_progress_signature(
-                    self.env_interface.world_graph
-                )
+                signature = planner_info.get("peerconsult_progress_signature")
+                if signature is None:
+                    signature = self._observable_progress_signature(
+                        self.env_interface.world_graph
+                    )
                 if (
                     previous_progress_signature is None
                     or signature != previous_progress_signature

@@ -128,8 +128,9 @@ def canonicalize_partnr_action(
             {
                 "stage": stage,
                 "resource": obj,
-                "task_id": "agent{}:{}:{}:{}:{}:{}:{}".format(
-                    agent_uid, stage, obj, relation.lower(), destination, constraint.lower(), reference or "none"
+                # A delivery stays the same task whichever agent performs it.
+                "task_id": "delivery:{}:{}:{}:{}:{}".format(
+                    obj, relation.lower(), destination, constraint.lower(), reference or "none"
                 ),
                 "action_identity": "{}|{}".format(stage, _call(name, values)),
             }
@@ -149,7 +150,7 @@ def canonicalize_partnr_action(
             {
                 "stage": stage,
                 "resource": target,
-                "task_id": "agent{}:{}:{}:{}".format(agent_uid, stage, lowered, target),
+                "task_id": "entity:{}".format(target) if stage == "acquire" else "state:{}:{}".format(lowered, target),
                 "action_identity": "{}|{}".format(stage, _call(name, values)),
             }
         )
@@ -166,7 +167,7 @@ def canonicalize_partnr_action(
                 "stage": "explore",
                 "resource": room,
                 "room_scope": room,
-                "task_id": "agent{}:explore:{}".format(agent_uid, room),
+                "task_id": "room:{}".format(room),
                 "action_identity": "explore|{}".format(_call(name, values)),
             }
         )
@@ -182,10 +183,11 @@ def canonicalize_partnr_action(
         if target in rooms:
             base.update(
                 {
-                    "stage": "explore",
+                    # Navigating to a known room is not blind exploration.
+                    # It must not reserve or deduplicate that room scope.
+                    "stage": "navigate",
                     "resource": target,
-                    "room_scope": target,
-                    "task_id": "agent{}:explore:{}".format(agent_uid, target),
+                    "task_id": "navigate:room:{}".format(target),
                     "action_identity": "navigate-room|{}".format(_call(name, values)),
                 }
             )
@@ -194,7 +196,7 @@ def canonicalize_partnr_action(
                 {
                     "stage": "navigate",
                     "resource": target,
-                    "task_id": "agent{}:navigate:{}".format(agent_uid, target),
+                    "task_id": "navigate:{}".format(target),
                     "action_identity": "navigate|{}".format(_call(name, values)),
                 }
             )

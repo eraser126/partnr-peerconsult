@@ -82,6 +82,7 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(reviews[0]["reason"], "planning_loop_guard")
 
     def test_terminal_failure_is_retained_as_bounded_self_recovery_fact(self):
+        self.board.enforce_required_recovery = True
         _, _, intents = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})
         self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
             "id": 1, "action": "Pick", "input": "cup", "task_id": intents[0]["task_id"],
@@ -95,6 +96,7 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertNotIn("Pick[cup] failed", self.board.decision_card(1))
 
     def test_successful_required_navigation_clears_recovery(self):
+        self.board.enforce_required_recovery = True
         self.board.required_recoveries[0] = "Navigate[cup]"
         _, _, intents = self.board.review({0: _proposal(("Navigate", "cup", None)), 1: _proposal(("Wait", None, None), False)})
         self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
@@ -114,6 +116,7 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(reviews[0]["reason"], "duplicate_room_reservation")
 
     def test_place_distance_failure_requires_navigation_before_next_action(self):
+        self.board.enforce_required_recovery = True
         place = ("Place", "cup,on,table_0,None,None", None)
         _, _, intents = self.board.review({0: _proposal(place), 1: _proposal(("Wait", None, None), False)})
         self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
@@ -129,6 +132,7 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(final[0][0], "Navigate")
 
     def test_successful_place_temporarily_blocks_undoing_the_relation(self):
+        self.board.enforce_placement_stability = True
         place = ("Place", "cup,on,table_0,None,None", None)
         _, _, intents = self.board.review({0: _proposal(place), 1: _proposal(("Wait", None, None), False)})
         self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
@@ -142,6 +146,7 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(reviews[0]["reason"], "settled_relation")
 
     def test_exploration_report_is_durable_shared_memory(self):
+        self.board.publish_exploration_reports = True
         _, _, intents = self.board.review({0: _proposal(("Explore", "kitchen_0", None)), 1: _proposal(("Wait", None, None), False)})
         self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
             "id": 1, "action": "Explore", "input": "kitchen_0", "task_id": intents[0]["task_id"],
@@ -153,7 +158,9 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertIn("kitchen_0 by agent0: cup: table_0 in kitchen_0", card)
         self.assertIn("self_available_unexplored_rooms=['hall_0']", card)
 
-    def test_peer_cannot_reexplore_a_room_with_a_public_report(self):
+    def test_peer_cannot_repeat_completed_room_task(self):
+        self.board.publish_exploration_reports = True
+        self.board.enforce_room_exploration_dedup = True
         _, _, intents = self.board.review({0: _proposal(("Explore", "kitchen_0", None)), 1: _proposal(("Wait", None, None), False)})
         self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
             "id": 1, "action": "Explore", "input": "kitchen_0", "task_id": intents[0]["task_id"],
@@ -162,8 +169,8 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.board.observe({0: self.graph, 1: self.graph})
         final, reviews, _ = self.board.review({0: _proposal(("Wait", None, None), False), 1: _proposal(("Explore", "kitchen_0", None))})
         self.assertEqual(final[1][0], "Wait")
-        self.assertEqual(reviews[0]["reason"], "room_already_reported")
-        self.assertIn("Use public_room_reports", self.board.decision_card(1))
+        self.assertEqual(reviews[0]["reason"], "completed_task")
+        self.assertIn("Advance to a different unsatisfied", self.board.decision_card(1))
 
     def test_successful_transport_is_retained_in_public_object_ledger(self):
         action = ("Rearrange", "cup,on,table_0,None,None", None)
@@ -175,6 +182,45 @@ class PeerConsultV4Tests(unittest.TestCase):
         }}})
         self.board.observe({0: self.graph, 1: self.graph})
         self.assertIn("cup: placed by agent0 (on table_0)", self.board.decision_card(1))
+
+    def test_v4_baseline_keeps_private_explore_observation_private(self):
+        _, _, intents = self.board.review({0: _proposal(("Explore", "kitchen_0", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Explore", "input": "kitchen_0", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_success",
+            "response": "Successful execution!\\nObjects:\\ncup: table_0 in kitchen_0",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        card = self.board.decision_card(1)
+        self.assertNotIn("cup: table_0 in kitchen_0", card)
+        self.assertIn("self_available_unexplored_rooms=['hall_0']", card)
+
+    def test_progress_signature_changes_only_for_positive_public_facts(self):
+        before = self.board.progress_signature()
+        _, _, intents = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Pick", "input": "cup", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_failure", "response": "Failed to pick.",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.assertEqual(before, self.board.progress_signature())
+
+        _, _, intents = self.board.review({0: _proposal(("Explore", "kitchen_0", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 2, "action": "Explore", "input": "kitchen_0", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_success", "response": "Successful execution!",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.assertNotEqual(before, self.board.progress_signature())
+
+    def test_task_ids_are_agent_independent_and_navigate_does_not_reserve_room(self):
+        delivery0 = canonicalize_partnr_action(0, ("Rearrange", "cup,on,table_0,None,None", None), self.graph)
+        delivery1 = canonicalize_partnr_action(1, ("Rearrange", "cup,on,table_0,None,None", None), self.graph)
+        navigation = canonicalize_partnr_action(1, ("Navigate", "kitchen_0", None), self.graph)
+        self.assertEqual(delivery0["task_id"], delivery1["task_id"])
+        self.assertEqual(navigation["stage"], "navigate")
+        self.assertIsNone(navigation["room_scope"])
+        self.assertNotEqual(navigation["task_id"], "room:kitchen_0")
 
 
 if __name__ == "__main__": unittest.main()

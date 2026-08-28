@@ -101,7 +101,9 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
             response = "validator: revise ({})".format(reason)
             ticket = self._ticket(final_action, proposal, response, True, intent.get("task_id"))
             return {}, {
-                "replanned": {uid: False}, "replan_required": {uid: True}, "responses": {},
+                # A validator rejection follows a fresh LLM proposal.  Mark it
+                # as such so the runner's no-progress guard counts reject loops.
+                "replanned": {uid: bool(proposal.get("is_new"))}, "replan_required": {uid: True}, "responses": {},
                 "thought": {uid: proposal.get("thought")}, "is_done": {uid: False},
                 "print": proposal.get("print", ""), "high_level_actions": {}, "peerconsult_execution_actions": {},
                 "prompts": {uid: self.curr_prompt}, "traces": {uid: self.trace},

@@ -25,6 +25,10 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             max_reviews=int(conf.get("max_reviews", 2)),
             max_ledger_entries=int(conf.get("max_ledger_entries", 8)),
             max_public_report_chars=int(conf.get("max_public_report_chars", 480)),
+            publish_exploration_reports=bool(conf.get("publish_exploration_reports", False)),
+            enforce_room_exploration_dedup=bool(conf.get("enforce_room_exploration_dedup", False)),
+            enforce_required_recovery=bool(conf.get("enforce_required_recovery", False)),
+            enforce_placement_stability=bool(conf.get("enforce_placement_stability", False)),
         )
         self._peer_log_path = os.path.join(self.output_dir, "peer_consult.jsonl")
 
@@ -76,6 +80,9 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             all_done = all_done and is_done
 
         self.board.record_execution_evidence(planner_info)
+        # Let the generic runner count planning decisions against V4's own
+        # monotonic public task facts rather than incidental graph changes.
+        planner_info["peerconsult_progress_signature"] = self.board.progress_signature()
         event = self.board.event(cards, proposals, reviews, final_actions, intents, planner_info)
         # The JSONL file spans every episode in a val_mini run.  Attach the
         # public episode filename so PeerConsult decisions can be joined with
