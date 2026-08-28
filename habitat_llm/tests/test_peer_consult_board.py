@@ -1,6 +1,7 @@
 """Deterministic protocol tests for PARTNR PeerConsult V4."""
 
 import unittest
+from unittest.mock import patch
 
 from habitat_llm.peer_consult.board import PeerConsultBoard
 from habitat_llm.peer_consult.partnr_adapter import (
@@ -54,6 +55,14 @@ class _CompletionEnv:
             for name in PeerConsultDecentralizedEvaluationRunner._COMPLETION_MEASURES
         }
         self.current_episode = object()
+
+
+class _AbortPlanner:
+    def __init__(self):
+        self.reason = None
+
+    def abort_active_action(self, reason):
+        self.reason = reason
 
 
 def _proposal(action, new=True):
@@ -199,6 +208,43 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertTrue(runner._official_completion_reached())
         for measure in curr_env.task.measurements.measures.values():
             self.assertEqual(measure.update_calls, 1)
+
+    def test_stalled_action_watchdog_aborts_and_reports_terminal_failure(self):
+        runner = object.__new__(PeerConsultDecentralizedEvaluationRunner)
+        planner = _AbortPlanner()
+        runner.planner = {0: planner}
+        runner.max_action_wall_time_s = 300
+        runner._active_action_started_at = {(0, 4): 100.0}
+        planner_info = {
+            "peerconsult_action_ticket": {
+                0: {
+                    "id": 4,
+                    "action": "Rearrange",
+                    "input": "cup,on,table_0,None,None",
+                    "terminal": False,
+                    "outcome": "ongoing",
+                }
+            },
+            "responses": {0: ""},
+            "replan_required": {0: False},
+            "replanned": {0: False},
+            "high_level_actions": {0: ("Rearrange", "cup,on,table_0,None,None", None)},
+            "peerconsult_execution_actions": {0: ("Rearrange", "cup,on,table_0,None,None", None)},
+        }
+        low_level_actions = {0: object()}
+        with patch(
+            "habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner.time.monotonic",
+            return_value=401.0,
+        ):
+            runner._abort_stalled_actions(planner_info, low_level_actions)
+        ticket = planner_info["peerconsult_action_ticket"][0]
+        self.assertTrue(ticket["terminal"])
+        self.assertEqual(ticket["outcome"], "terminal_failure")
+        self.assertIn("watchdog", ticket["response"])
+        self.assertIn("watchdog", planner.reason)
+        self.assertNotIn(0, low_level_actions)
+        self.assertTrue(planner_info["replan_required"][0])
+        self.assertNotIn(0, planner_info["peerconsult_execution_actions"])
 
     def test_rejected_v4_proposal_is_not_written_as_an_executed_action(self):
         runner = object.__new__(EvaluationRunner)

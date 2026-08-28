@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any, Dict, Tuple
 
 from habitat_llm.evaluation.decentralized_evaluation_runner import (
@@ -42,12 +43,19 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             share_discovered_locations=bool(conf.get("share_discovered_locations", False)),
             max_shared_locations=int(conf.get("max_shared_locations", 5)),
         )
+        # Composite skills can remain ``ongoing`` indefinitely when a local
+        # motion controller is blocked.  This is a runner-side safety bound,
+        # independent of the LLM's planning budget.
+        self.max_action_wall_time_s = float(conf.get("max_action_wall_time_s", 300))
+        self._active_action_started_at: Dict[Tuple[int, int], float] = {}
         self._peer_log_path = os.path.join(self.output_dir, "peer_consult.jsonl")
 
     def reset_planners(self) -> None:
         super().reset_planners()
         if hasattr(self, "board"):
             self.board.reset()
+        if hasattr(self, "_active_action_started_at"):
+            self._active_action_started_at.clear()
 
     @staticmethod
     def _merge(planner_info: Dict[str, Any], one_info: Dict[str, Any]) -> None:
@@ -62,6 +70,53 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
     def _write_event(self, event: Dict[str, Any]) -> None:
         with open(self._peer_log_path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+
+    def _abort_stalled_actions(
+        self, planner_info: Dict[str, Any], low_level_actions: Dict[int, Any]
+    ) -> None:
+        """End only a skill that remains non-terminal past a wall-clock bound.
+
+        A terminal failure ticket is fed back through the usual board evidence
+        path.  Consequently the claim is released and no public placement is
+        recorded; the planner's next prompt sees a factual failure instead of
+        silently treating an abandoned proposal as a completed transport.
+        """
+        if self.max_action_wall_time_s <= 0:
+            return
+        tickets = planner_info.get("peerconsult_action_ticket", {})
+        now = time.monotonic()
+        for uid_raw, ticket in list(tickets.items()):
+            uid = int(uid_raw)
+            ticket_id = ticket.get("id")
+            if ticket_id is None:
+                continue
+            key = (uid, int(ticket_id))
+            if ticket.get("terminal"):
+                self._active_action_started_at.pop(key, None)
+                continue
+            started_at = self._active_action_started_at.setdefault(key, now)
+            if now - started_at < self.max_action_wall_time_s:
+                continue
+            reason = "watchdog: action exceeded {:.0f}s without terminal executor response".format(
+                self.max_action_wall_time_s
+            )
+            planner = self.planner[uid]
+            planner.abort_active_action(reason)
+            low_level_actions.pop(uid, None)
+            aborted_ticket = dict(ticket)
+            aborted_ticket.update(
+                status="terminal",
+                terminal=True,
+                outcome="terminal_failure",
+                response=reason,
+            )
+            tickets[uid_raw] = aborted_ticket
+            planner_info.setdefault("responses", {})[uid] = reason
+            planner_info.setdefault("replan_required", {})[uid] = True
+            planner_info.setdefault("replanned", {})[uid] = False
+            planner_info.setdefault("high_level_actions", {}).pop(uid, None)
+            planner_info.setdefault("peerconsult_execution_actions", {}).pop(uid, None)
+            self._active_action_started_at.pop(key, None)
 
     def _official_completion_reached(self) -> bool:
         """Query only PARTNR's official success bit, never its goal explanation.
@@ -134,6 +189,7 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             self._merge(planner_info, info)
             all_done = all_done and is_done
 
+        self._abort_stalled_actions(planner_info, low_level_actions)
         self.board.record_execution_evidence(planner_info)
         # Let the generic runner count planning decisions against V4's own
         # monotonic public task facts rather than incidental graph changes.

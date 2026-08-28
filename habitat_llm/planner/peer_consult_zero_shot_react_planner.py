@@ -145,6 +145,19 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
             "peerconsult_action_ticket": {uid: ticket},
         }, self.is_done
 
+    def abort_active_action(self, reason: str) -> None:
+        """Cancel a motor skill that exceeded the runner's execution budget.
+
+        The skill reset is deliberately narrower than ``planner.reset()``:
+        it keeps the task trace and factual PeerConsult board intact, but
+        clears the tool's internal composite-skill state so a fresh plan can
+        safely choose a recovery action on the next runner tick.
+        """
+        self._agents[0].reset()
+        self.last_high_level_actions = {}
+        self.replan_required = True
+        self._peerconsult_refresh_prompt = True
+
     def _done_info(self, proposal):
         uid = self._agents[0].uid
         return {"print": proposal.get("print", ""), "prompts": {uid: self.curr_prompt}, "traces": {uid: self.trace}, "replanning_count": {uid: self.replanning_count}, "replan_required": {uid: self.replan_required}, "replanned": {uid: bool(proposal.get("is_new"))}, "is_done": {uid: True}, "thought": {uid: proposal.get("thought")}, "high_level_actions": {uid: ("Done", None, None)}, "peerconsult_action_ticket": {}}

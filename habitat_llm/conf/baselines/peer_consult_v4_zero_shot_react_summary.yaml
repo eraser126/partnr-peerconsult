@@ -35,6 +35,9 @@ evaluation:
     # object-location facts; set false for the strict-privacy ablation.
     share_discovered_locations: true
     max_shared_locations: 5
+    # Rule-based execution watchdog: abort only a motor skill that has not
+    # reached any terminal executor response for five minutes.
+    max_action_wall_time_s: 300
   no_progress_guard:
     enabled: true
     min_elapsed_seconds: 600
