@@ -23,6 +23,8 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             max_targets=int(conf.get("max_targets", 5)),
             max_rooms=int(conf.get("max_rooms", 4)),
             max_reviews=int(conf.get("max_reviews", 2)),
+            max_ledger_entries=int(conf.get("max_ledger_entries", 8)),
+            max_public_report_chars=int(conf.get("max_public_report_chars", 480)),
         )
         self._peer_log_path = os.path.join(self.output_dir, "peer_consult.jsonl")
 

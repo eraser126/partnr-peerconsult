@@ -141,5 +141,40 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(final[1][0], "Wait")
         self.assertEqual(reviews[0]["reason"], "settled_relation")
 
+    def test_exploration_report_is_durable_shared_memory(self):
+        _, _, intents = self.board.review({0: _proposal(("Explore", "kitchen_0", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Explore", "input": "kitchen_0", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_success",
+            "response": "Successful execution!\nObjects:\ncup: table_0 in kitchen_0",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        card = self.board.decision_card(1)
+        self.assertIn("kitchen_0 by agent0: cup: table_0 in kitchen_0", card)
+        self.assertIn("self_available_unexplored_rooms=['hall_0']", card)
+
+    def test_peer_cannot_reexplore_a_room_with_a_public_report(self):
+        _, _, intents = self.board.review({0: _proposal(("Explore", "kitchen_0", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Explore", "input": "kitchen_0", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_success", "response": "Successful execution!\nObjects:\ncup: table_0",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        final, reviews, _ = self.board.review({0: _proposal(("Wait", None, None), False), 1: _proposal(("Explore", "kitchen_0", None))})
+        self.assertEqual(final[1][0], "Wait")
+        self.assertEqual(reviews[0]["reason"], "room_already_reported")
+        self.assertIn("Use public_room_reports", self.board.decision_card(1))
+
+    def test_successful_transport_is_retained_in_public_object_ledger(self):
+        action = ("Rearrange", "cup,on,table_0,None,None", None)
+        _, _, intents = self.board.review({0: _proposal(action), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Rearrange", "input": "cup,on,table_0,None,None",
+            "task_id": intents[0]["task_id"], "terminal": True, "outcome": "terminal_success",
+            "response": "Successful execution!",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.assertIn("cup: placed by agent0 (on table_0)", self.board.decision_card(1))
+
 
 if __name__ == "__main__": unittest.main()

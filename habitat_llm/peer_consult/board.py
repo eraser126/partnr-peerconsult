@@ -16,11 +16,23 @@ class PeerConsultBoard:
     PROTOCOL = "PeerConsultV4"
     _CLAIM_STAGES = {"acquire", "transport", "place", "state"}
 
-    def __init__(self, claim_ttl_decisions=3, max_targets=5, max_rooms=4, max_reviews=2, max_execution_facts=3, placement_lock_ttl=12):
+    def __init__(
+        self,
+        claim_ttl_decisions=3,
+        max_targets=5,
+        max_rooms=4,
+        max_reviews=2,
+        max_execution_facts=3,
+        placement_lock_ttl=12,
+        max_ledger_entries=8,
+        max_public_report_chars=480,
+    ):
         self.claim_ttl_decisions = claim_ttl_decisions
         self.max_targets, self.max_rooms, self.max_reviews = max_targets, max_rooms, max_reviews
         self.max_execution_facts = max_execution_facts
         self.placement_lock_ttl = placement_lock_ttl
+        self.max_ledger_entries = max_ledger_entries
+        self.max_public_report_chars = max_public_report_chars
         self.reset()
 
     def reset(self) -> None:
@@ -29,6 +41,11 @@ class PeerConsultBoard:
         self.claims: Dict[str, Dict[str, Any]] = {}
         self.room_reservations: Dict[str, Dict[str, Any]] = {}
         self.settled_placements: Dict[str, Dict[str, Any]] = {}
+        # These records are built only from public actions and their executor
+        # replies.  They are durable task memory, not evaluator propositions.
+        self.known_rooms: Dict[int, set[str]] = {0: set(), 1: set()}
+        self.explored_rooms: Dict[str, Dict[str, Any]] = {}
+        self.object_ledger: Dict[str, Dict[str, Any]] = {}
         self.tasks: Dict[str, Dict[str, Any]] = {}
         self.active_tasks: Dict[int, Optional[str]] = {0: None, 1: None}
         self.active_executions: Dict[int, Dict[str, Any]] = {}
@@ -46,6 +63,13 @@ class PeerConsultBoard:
     def _objects(graph: Any) -> Iterable[Any]:
         try:
             return graph.get_all_objects()
+        except Exception:
+            return []
+
+    @staticmethod
+    def _rooms(graph: Any) -> Iterable[Any]:
+        try:
+            return graph.get_all_rooms()
         except Exception:
             return []
 
@@ -72,6 +96,27 @@ class PeerConsultBoard:
         if value not in self.events:
             self.events.append(value)
 
+    def _remember_object(self, resource: str, uid: int, state: str, detail: str) -> None:
+        if not resource:
+            return
+        self.object_ledger[resource] = {
+            "agent": uid,
+            "state": state,
+            "detail": detail,
+            "step": self.protocol_step,
+        }
+
+    @staticmethod
+    def _public_room_report(response: str, limit: int) -> str:
+        """Return a bounded report that the acting agent exposed via Explore."""
+        raw = str(response or "")
+        marker = raw.lower().find("objects:")
+        if marker < 0:
+            return "executor confirmed exploration"
+        lines = [" ".join(line.split()) for line in raw[marker + len("objects:") :].splitlines()]
+        report = "; ".join(line for line in lines if line)
+        return (report or "no objects reported")[:limit]
+
     def _release(self, task_id: str) -> None:
         self.claims = {name: claim for name, claim in self.claims.items() if claim.get("task_id") != task_id}
         self.room_reservations = {room: claim for room, claim in self.room_reservations.items() if claim.get("task_id") != task_id}
@@ -84,7 +129,8 @@ class PeerConsultBoard:
     def _record_execution_fact(self, uid: int, ticket: Mapping[str, Any]) -> None:
         """Preserve bounded executor facts, never model thoughts or evaluator state."""
         action = self._ticket_action(ticket)
-        response = " ".join(str(ticket.get("response") or "").split())[:160]
+        raw_response = str(ticket.get("response") or "")
+        response = " ".join(raw_response.split())[:160]
         success = ticket.get("outcome") == "terminal_success"
         fact = "{} {}{}".format(
             action,
@@ -102,6 +148,25 @@ class PeerConsultBoard:
         action_name = str(ticket.get("action") or "").lower()
         action_input = str(ticket.get("input") or "")
         values = [value.strip() for value in action_input.split(",")]
+        if success and action_name == "explore" and action_input:
+            self.explored_rooms[action_input] = {
+                "agent": uid,
+                "step": self.protocol_step,
+                "report": self._public_room_report(raw_response, self.max_public_report_chars),
+            }
+            self._event(uid, "room_explored", action_input)
+        if success and action_name == "pick" and action_input:
+            self._remember_object(action_input, uid, "held", "Pick succeeded")
+        elif success and action_name in {"place", "rearrange"} and len(values) >= 3:
+            resource, relation, destination = values[:3]
+            self._remember_object(
+                resource,
+                uid,
+                "placed",
+                "{} {}".format(relation.lower(), destination),
+            )
+        elif not success and action_name in {"pick", "place", "rearrange"} and values and values[0]:
+            self._remember_object(values[0], uid, "needs_recovery", "{} failed".format(action_name))
         if success and action_name in {"place", "rearrange"} and len(values) >= 3:
             resource, relation, destination = values[:3]
             if resource and relation.lower() in {"on", "within"} and destination:
@@ -173,6 +238,9 @@ class PeerConsultBoard:
         self._consume_evidence()
         prior, owners = dict(self.physical_owners), {}
         for uid, graph in world_graphs.items():
+            self.known_rooms.setdefault(int(uid), set()).update(
+                str(getattr(room, "name", "")) for room in self._rooms(graph) if getattr(room, "name", "")
+            )
             for obj in self._objects(graph):
                 name, owner = str(getattr(obj, "name", "")), self._owner(graph, obj, int(uid))
                 if name and owner is not None:
@@ -287,6 +355,10 @@ class PeerConsultBoard:
             room = intent.get("room_scope")
             if room and self.room_reservations.get(str(room), {}).get("agent") not in {None, uid}:
                 self._reject(uid, intent, final, reviews, "room_reservation")
+                continue
+            explored = self.explored_rooms.get(str(room)) if room else None
+            if explored and explored.get("agent") != uid:
+                self._reject(uid, intent, final, reviews, "room_already_reported")
         for uid, intent in intents.items():
             self.current_intents[uid] = dict(intent)
             if final[uid] != proposals[uid]["high_level_action"] or not proposals[uid].get("is_new"):
@@ -312,6 +384,51 @@ class PeerConsultBoard:
     def _tasks(self, uid: int, status: str) -> List[str]:
         return sorted(task["id"] for task in self.tasks.values() if task.get("agent") == uid and task.get("status") == status)[-self.max_targets:]
 
+    def _available_rooms(self, uid: int) -> List[str]:
+        reserved_by_peer = {
+            room
+            for room, value in self.room_reservations.items()
+            if value.get("agent") != uid
+        }
+        return sorted(
+            room
+            for room in self.known_rooms.get(uid, set())
+            if room not in self.explored_rooms and room not in reserved_by_peer
+        )[: self.max_rooms]
+
+    def _room_reports(self) -> List[str]:
+        entries = []
+        for room, value in sorted(self.explored_rooms.items(), key=lambda item: item[1]["step"], reverse=True):
+            entries.append("{} by agent{}: {}".format(room, value["agent"], value["report"]))
+        return entries[: self.max_rooms]
+
+    def _ledger(self) -> List[str]:
+        entries = []
+        for resource, value in sorted(self.object_ledger.items(), key=lambda item: item[1]["step"], reverse=True):
+            entries.append(
+                "{}: {} by agent{} ({})".format(
+                    resource, value["state"], value["agent"], value["detail"]
+                )
+            )
+        return entries[: self.max_ledger_entries]
+
+    def _revision_advice(self, uid: int) -> str:
+        latest = next((item for item in reversed(self.reviews) if item["agent"] == uid), None)
+        if not latest:
+            return "none"
+        reason = latest["reason"]
+        guidance = {
+            "duplicate_room_reservation": "Do not repeat that room action. Choose self_available_unexplored_rooms or use a reported object.",
+            "room_reservation": "The peer owns that room now. Choose a different self_available_unexplored_room or an object action.",
+            "room_already_reported": "That room has already been explored. Use public_room_reports instead of exploring it again.",
+            "duplicate_claim": "The peer is working on that object. Select a different unclaimed object or room.",
+            "physical_ownership": "The peer holds that object. Do not pick or rearrange it; work on another object.",
+            "required_recovery": "Execute self_required_recovery exactly before proposing another action.",
+            "completed_task": "That exact action already succeeded. Advance to a different unsatisfied object or room.",
+            "planning_loop_guard": "The last identical action made no progress. Select a materially different action.",
+        }
+        return guidance.get(reason, "The previous proposal was rejected; choose a materially different valid action.")
+
     def decision_card(self, uid: int) -> str:
         """V2 supplies private entities via world_description; card supplies facts only."""
         peer = 1 - uid
@@ -329,6 +446,9 @@ class PeerConsultBoard:
             "peer_public_tasks={}".format(self._tasks(peer, "in_progress") or ["none"]),
             "peer_claims={}".format(claims or ["none"]),
             "peer_room_reservations={}".format(rooms or ["none"]),
+            "self_available_unexplored_rooms={}".format(self._available_rooms(uid) or ["none"]),
+            "public_room_reports={}".format(self._room_reports() or ["none"]),
+            "public_object_ledger={}".format(self._ledger() or ["none"]),
             "settled_placements={}".format(
                 ["{}:{}:{}".format(resource, value["relation"], value["destination"])
                  for resource, value in sorted(self.settled_placements.items())][-self.max_targets:] or ["none"]
@@ -337,6 +457,7 @@ class PeerConsultBoard:
             "loop_guard={}".format(self.pending_loop_guards[uid] or "none"),
             "self_recent_execution={}".format(self.execution_facts[uid] or ["none"]),
             "self_required_recovery={}".format(self.required_recoveries[uid] or "none"),
+            "self_action_guidance={}".format(self._revision_advice(uid)),
             "Use exact entity IDs from your private world description; never add a label such as room: before an ID.",
         ])
 

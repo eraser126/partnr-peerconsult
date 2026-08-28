@@ -22,6 +22,8 @@ evaluation:
     max_targets: 5
     max_rooms: 4
     max_reviews: 2
+    max_ledger_entries: 8
+    max_public_report_chars: 480
   no_progress_guard:
     enabled: true
     min_elapsed_seconds: 600
