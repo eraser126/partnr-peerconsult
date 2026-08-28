@@ -4,6 +4,7 @@ import unittest
 
 from habitat_llm.peer_consult.board import PeerConsultBoard
 from habitat_llm.peer_consult.partnr_adapter import (
+    build_grounded_transport_candidates,
     build_local_action_candidates,
     canonicalize_partnr_action,
     execution_outcome,
@@ -136,6 +137,20 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertIn("Place[held_object,relation,destination,constraint,reference]", candidates)
         self.assertIn("held_object must be shown as held by you", candidates)
         self.assertIn("not a priority order", candidates)
+
+    def test_grounded_transport_candidates_match_task_objects_not_unrelated_objects(self):
+        graph = _Graph(
+            objects=["candle_0", "candle_holder_1", "plant_container_2", "box_3"],
+            furniture=["table_10", "table_30"],
+        )
+        candidates = build_grounded_transport_candidates(
+            "Place the candle and candle holder on the white table. Move the plant to the same table.",
+            graph, {"Rearrange"},
+        )
+        self.assertIn("Rearrange[candle_0,on,table_10,None,None]", candidates)
+        self.assertIn("Rearrange[candle_holder_1,on,table_10,None,None]", candidates)
+        self.assertIn("Rearrange[plant_container_2,on,table_10,None,None]", candidates)
+        self.assertNotIn("Rearrange[box_3", candidates)
 
     def test_official_completion_adapter_reads_only_success_bit(self):
         runner = object.__new__(PeerConsultDecentralizedEvaluationRunner)

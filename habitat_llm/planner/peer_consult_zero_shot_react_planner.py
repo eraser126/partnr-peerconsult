@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from habitat_llm.llm.instruct.utils import get_objects_descr
 from habitat_llm.peer_consult.partnr_adapter import (
+    build_grounded_transport_candidates,
     build_local_action_candidates,
     canonicalize_partnr_action,
     execution_outcome,
@@ -32,6 +33,9 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         params["peerconsult_card"] = self.peerconsult_card
         params["local_action_candidates"] = build_local_action_candidates(
             self._agents[0].uid, world_graph, self._agents[0].tools.keys()
+        )
+        params["grounded_transport_candidates"] = build_grounded_transport_candidates(
+            input_instruction, world_graph, self._agents[0].tools.keys()
         )
         return self.prompt.format(**params), params
 

@@ -13,6 +13,8 @@ prompt: |-
 
         {local_action_candidates}
 
+        {grounded_transport_candidates}
+
         Possible Actions:
         {tool_descriptions}
 

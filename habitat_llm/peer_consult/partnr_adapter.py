@@ -17,6 +17,11 @@ _TYPE_PREFIX = re.compile(
     r"^(?:room|object|furniture|receptacle|container|entity|target|reference)\s*:\s*(.+)$",
     re.IGNORECASE,
 )
+_TOKEN_PATTERN = re.compile(r"[a-z]+")
+_TASK_STOP_WORDS = {
+    "a", "an", "and", "at", "by", "for", "from", "in", "into", "it",
+    "move", "of", "on", "place", "same", "the", "to", "with",
+}
 
 
 def _names(items: Iterable[Any]) -> set[str]:
@@ -46,6 +51,91 @@ def _object_furniture_name(world_graph: Any, object_name: str) -> Optional[str]:
     except Exception:
         return None
     return None
+
+
+def _tokens(value: str) -> set[str]:
+    return set(_TOKEN_PATTERN.findall(str(value).lower())) - _TASK_STOP_WORDS
+
+
+def _entity_room_name(world_graph: Any, entity: Any) -> Optional[str]:
+    try:
+        room = world_graph.get_room_for_entity(entity)
+        return str(getattr(room, "name", "")) or None
+    except Exception:
+        return None
+
+
+def _is_held_by_either_agent(world_graph: Any, obj: Any) -> bool:
+    try:
+        return bool(
+            world_graph.is_object_with_agent(obj, "robot")
+            or world_graph.is_object_with_agent(obj, "human")
+        )
+    except Exception:
+        return False
+
+
+def build_grounded_transport_candidates(
+    instruction: str, world_graph: Any, available_actions: Iterable[str], limit: int = 12
+) -> str:
+    """Offer bounded copy-ready Rearrange actions grounded in local facts.
+
+    This is a planner-side aid, not a board policy: it matches task words to
+    locally observed entity names and never sees evaluator or peer-only state.
+    The complete legal domains remain available separately.
+    """
+    if "rearrange" not in {str(action).lower() for action in available_actions}:
+        return "[Grounded transport candidates]\n- Rearrange is unavailable to this agent."
+    task_tokens = _tokens(instruction)
+    try:
+        objects = list(world_graph.get_all_objects())
+        furniture = list(world_graph.get_all_furnitures()) + list(
+            world_graph.get_all_receptacles()
+        )
+    except Exception:
+        return "[Grounded transport candidates]\n- No local object/furniture facts yet."
+
+    relevant_objects = [
+        obj
+        for obj in objects
+        if _tokens(getattr(obj, "name", "")) & task_tokens
+        and not _is_held_by_either_agent(world_graph, obj)
+    ]
+    target_furniture = [
+        item for item in furniture if _tokens(getattr(item, "name", "")) & task_tokens
+    ]
+    # If the instruction names a room and local furniture-room facts are
+    # available, retain only matching destination furniture.
+    room_matched = [
+        item
+        for item in target_furniture
+        if _tokens(_entity_room_name(world_graph, item) or "") & task_tokens
+    ]
+    if room_matched:
+        target_furniture = room_matched
+    relation = "within" if {"inside", "within"} & task_tokens else "on"
+    actions = []
+    for obj in sorted(relevant_objects, key=lambda item: str(getattr(item, "name", ""))):
+        for destination in sorted(target_furniture, key=lambda item: str(getattr(item, "name", ""))):
+            actions.append(
+                "Rearrange[{},{},{},None,None]".format(
+                    getattr(obj, "name", ""), relation, getattr(destination, "name", "")
+                )
+            )
+            if len(actions) >= limit:
+                break
+        if len(actions) >= limit:
+            break
+    header = "[Grounded transport candidates]"
+    if not actions:
+        return header + "\n- No task-matched unheld object and destination pair is locally known yet."
+    return "\n".join(
+        [
+            header,
+            "Each option is a complete navigation-pick-place skill. Select only an option matching the instruction; these are not priority-ranked.",
+            *["- {}".format(action) for action in actions],
+        ]
+    )
 
 
 def build_local_action_candidates(
