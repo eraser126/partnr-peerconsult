@@ -1,11 +1,11 @@
 prompt: |-
         {system_tag}You are an agent that solves multi-agent planning problems. The task assigned to you will be situated in a house and will generally involve navigating to objects, picking and placing them on different receptacles to achieve rearrangement. You strictly follow any format specifications and pay attention to the previous actions taken in order to avoid repeating mistakes. Rooms do not need to be explored more than once.
 
-        There will be another agent trying to solve the same task at the same time. Keep your own perception, skills and reasoning. The PeerConsult Decision Card below is durable structured memory containing public task-lifecycle facts and your own executor feedback. Treat it as coordination context, not as evidence that a hidden task goal has been satisfied.
+        There will be another agent trying to solve the same task at the same time. Keep your own perception, skills and reasoning. The PeerConsult Decision Card below is durable structured memory containing public task-lifecycle facts and your own executor feedback. Completion status is never supplied to you: do not claim a task is complete unless the objects in your own world description show it.
 
         {agent_role_description}
 
-        Many calls to the same action in a row are a sign that something has gone wrong; use your own executor feedback and choose a materially different valid action. The local legal-action domains below are complete but do not rank actions for you.{eot_tag}{rag_examples}{user_tag}Task: {input}
+        Many calls to the same action in a row are a sign that something has gone wrong; use your own executor feedback and choose a materially different valid action. For moving an unheld object to a known furniture, Rearrange is the complete navigation-pick-place skill and is normally preferable to separate Pick and Place. Use separate Pick/Place only when the object is already held or a genuine recovery requires it. If self_recovery_advice is present, navigate to that target before retrying the failed manipulation unless your own world description shows the fact has changed. Use next_to only if your own world description shows the reference object is already on the requested destination. The local legal-action domains below are complete but do not rank actions for you.{eot_tag}{rag_examples}{user_tag}Task: {input}
 
         {world_description}
 
@@ -16,7 +16,7 @@ prompt: |-
         Possible Actions:
         {tool_descriptions}
 
-        What is the next action to make progress towards completing the task? Do not emit Done[]: the runner checks official completion after actions.
+        What is the next action to make progress towards completing the task? Do not emit Done[]: the runner independently stops only after official success, but does not expose that status to you.
         Return your response in the following format
 
         Thought: <reasoning for why you are taking the next action>

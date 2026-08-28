@@ -39,6 +39,8 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
             enforce_room_exploration_dedup=bool(conf.get("enforce_room_exploration_dedup", False)),
             enforce_required_recovery=bool(conf.get("enforce_required_recovery", False)),
             enforce_placement_stability=bool(conf.get("enforce_placement_stability", False)),
+            share_discovered_locations=bool(conf.get("share_discovered_locations", False)),
+            max_shared_locations=int(conf.get("max_shared_locations", 5)),
         )
         self._peer_log_path = os.path.join(self.output_dir, "peer_consult.jsonl")
 

@@ -34,6 +34,20 @@ def _world_names(world_graph: Any, method: str) -> set[str]:
         return set()
 
 
+def _object_furniture_name(world_graph: Any, object_name: str) -> Optional[str]:
+    """Return a locally observed object's supporting furniture, if known."""
+    if world_graph is None:
+        return None
+    try:
+        for obj in world_graph.get_all_objects():
+            if str(getattr(obj, "name", "")) == object_name:
+                furniture = world_graph.find_furniture_for_object(obj)
+                return str(getattr(furniture, "name", "")) or None
+    except Exception:
+        return None
+    return None
+
+
 def build_local_action_candidates(
     agent_uid: int, world_graph: Any, available_actions: Iterable[str]
 ) -> str:
@@ -176,6 +190,14 @@ def canonicalize_partnr_action(
             return invalid("{} destination furniture is not locally known.".format(name))
         if constraint.lower() == "next_to" and objects and reference not in objects:
             return invalid("{} reference object is not locally known.".format(name))
+        if constraint.lower() == "next_to":
+            reference_furniture = _object_furniture_name(world_graph, reference)
+            if reference_furniture is not None and reference_furniture != destination:
+                return invalid(
+                    "{} next_to reference must already be on destination {} (it is on {}).".format(
+                        name, destination, reference_furniture
+                    )
+                )
         stage = "transport" if lowered == "rearrange" else "place"
         base.update(
             {

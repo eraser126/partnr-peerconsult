@@ -30,6 +30,8 @@ class PeerConsultBoard:
         enforce_room_exploration_dedup=False,
         enforce_required_recovery=False,
         enforce_placement_stability=False,
+        share_discovered_locations=False,
+        max_shared_locations=5,
     ):
         self.claim_ttl_decisions = claim_ttl_decisions
         self.max_targets, self.max_rooms, self.max_reviews = max_targets, max_rooms, max_reviews
@@ -43,6 +45,8 @@ class PeerConsultBoard:
         self.enforce_room_exploration_dedup = enforce_room_exploration_dedup
         self.enforce_required_recovery = enforce_required_recovery
         self.enforce_placement_stability = enforce_placement_stability
+        self.share_discovered_locations = share_discovered_locations
+        self.max_shared_locations = max_shared_locations
         self.reset()
 
     def reset(self) -> None:
@@ -56,6 +60,7 @@ class PeerConsultBoard:
         self.known_rooms: Dict[int, set[str]] = {0: set(), 1: set()}
         self.explored_rooms: Dict[str, Dict[str, Any]] = {}
         self.object_ledger: Dict[str, Dict[str, Any]] = {}
+        self.discovered_locations: Dict[str, Dict[str, Any]] = {}
         self.tasks: Dict[str, Dict[str, Any]] = {}
         self.active_tasks: Dict[int, Optional[str]] = {0: None, 1: None}
         self.active_executions: Dict[int, Dict[str, Any]] = {}
@@ -64,6 +69,7 @@ class PeerConsultBoard:
         self._consumed_evidence: Dict[Tuple[int, int], bool] = {}
         self.execution_facts: Dict[int, List[str]] = {0: [], 1: []}
         self.required_recoveries: Dict[int, Optional[str]] = {0: None, 1: None}
+        self.recovery_advice: Dict[int, Optional[str]] = {0: None, 1: None}
         self.progress_versions, self.action_history = {0: 0, 1: 0}, {0: {}, 1: {}}
         self.pending_loop_guards: Dict[int, Optional[str]] = {0: None, 1: None}
         self.reviews: List[Dict[str, Any]] = []
@@ -106,6 +112,21 @@ class PeerConsultBoard:
         if value not in self.events:
             self.events.append(value)
 
+    @staticmethod
+    def _location(graph: Any, obj: Any) -> Tuple[Optional[str], Optional[str]]:
+        """Return facts present in one agent's partial graph, if any."""
+        try:
+            furniture = graph.find_furniture_for_object(obj)
+            furniture_name = str(getattr(furniture, "name", "")) or None
+        except Exception:
+            furniture_name = None
+        try:
+            room = graph.get_room_for_entity(obj)
+            room_name = str(getattr(room, "name", "")) or None
+        except Exception:
+            room_name = None
+        return furniture_name, room_name
+
     def _remember_object(self, resource: str, uid: int, state: str, detail: str) -> None:
         if not resource:
             return
@@ -142,21 +163,26 @@ class PeerConsultBoard:
         raw_response = str(ticket.get("response") or "")
         response = " ".join(raw_response.split())[:160]
         success = ticket.get("outcome") == "terminal_success"
+        action_name = str(ticket.get("action") or "").lower()
+        action_input = str(ticket.get("input") or "")
         fact = "{} {}{}".format(
             action,
             "succeeded" if success else "failed",
             ": {}".format(response) if response else "",
         )
-        facts = self.execution_facts.setdefault(uid, [])
-        facts.append(fact)
-        self.execution_facts[uid] = facts[-self.max_execution_facts :]
+        # Validator-inserted Wait actions are not physical experience.  Do not
+        # let them crowd out the agent's useful action/failure trajectory.
+        if not (action_name == "wait" and raw_response.startswith("validator:")):
+            facts = self.execution_facts.setdefault(uid, [])
+            facts.append(fact)
+            self.execution_facts[uid] = facts[-self.max_execution_facts :]
 
         recovery = self.required_recoveries.get(uid)
         if success and recovery == action:
             self.required_recoveries[uid] = None
+        if success and self.recovery_advice.get(uid) == action:
+            self.recovery_advice[uid] = None
 
-        action_name = str(ticket.get("action") or "").lower()
-        action_input = str(ticket.get("input") or "")
         values = [value.strip() for value in action_input.split(",")]
         if success and action_name == "explore" and action_input:
             self.explored_rooms[action_input] = {
@@ -201,8 +227,11 @@ class PeerConsultBoard:
                 recovery_target = action_input
             elif action_name in {"place", "rearrange"} and len(values) >= 3:
                 recovery_target = values[2]
-        if recovery_target and self.enforce_required_recovery:
-            self.required_recoveries[uid] = "Navigate[{}]".format(recovery_target)
+        if recovery_target:
+            recovery = "Navigate[{}]".format(recovery_target)
+            self.recovery_advice[uid] = recovery
+            if self.enforce_required_recovery:
+                self.required_recoveries[uid] = recovery
 
     def _consume_evidence(self) -> None:
         for key, ticket in list(self.execution_evidence.items()):
@@ -262,6 +291,13 @@ class PeerConsultBoard:
                 name, owner = str(getattr(obj, "name", "")), self._owner(graph, obj, int(uid))
                 if name and owner is not None:
                     owners[name] = owner
+                if name and self.share_discovered_locations:
+                    furniture, room = self._location(graph, obj)
+                    if furniture or room:
+                        self.discovered_locations[name] = {
+                            "agent": int(uid), "furniture": furniture,
+                            "room": room, "step": self.protocol_step,
+                        }
         self.physical_owners = owners
         for name, uid in owners.items():
             if prior.get(name) != uid:
@@ -463,6 +499,22 @@ class PeerConsultBoard:
             )
         return entries[: self.max_ledger_entries]
 
+    def _shared_locations(self, uid: int) -> List[str]:
+        if not self.share_discovered_locations:
+            return []
+        entries = []
+        for resource, value in sorted(
+            self.discovered_locations.items(),
+            key=lambda item: item[1]["step"],
+            reverse=True,
+        ):
+            if value.get("agent") == uid:
+                continue
+            location = value.get("furniture") or "unknown furniture"
+            room = value.get("room") or "unknown room"
+            entries.append("{} at {} in {} (agent{})".format(resource, location, room, value["agent"]))
+        return entries[: self.max_shared_locations]
+
     def _revision_advice(self, uid: int) -> str:
         latest = next((item for item in reversed(self.reviews) if item["agent"] == uid), None)
         if not latest:
@@ -488,7 +540,7 @@ class PeerConsultBoard:
         rooms = sorted(name for name, value in self.room_reservations.items() if value.get("agent") == peer)
         return "\n".join([
             "[PeerConsult V4 Decision Card]",
-            "strict_observation=true; completion_oracle=official_env_runner_only",
+            "strict_observation=true; completion_status=not_supplied_to_planner",
             "self_held={}".format(self._held(uid) or ["none"]),
             "self_active_tasks={}".format(self._tasks(uid, "in_progress") or ["none"]),
             "self_suspended_tasks={}".format(self._tasks(uid, "suspended") or ["none"]),
@@ -500,6 +552,7 @@ class PeerConsultBoard:
             "self_available_unexplored_rooms={}".format(self._available_rooms(uid) or ["none"]),
             "public_room_reports={}".format(self._room_reports() or ["none"]),
             "public_object_ledger={}".format(self._ledger() or ["none"]),
+            "peer_discovered_locations={}".format(self._shared_locations(uid) or ["disabled"]),
             "settled_placements={}".format(
                 ["{}:{}:{}".format(resource, value["relation"], value["destination"])
                  for resource, value in sorted(self.settled_placements.items())][-self.max_targets:] or ["none"]
@@ -508,6 +561,7 @@ class PeerConsultBoard:
             "loop_guard={}".format(self.pending_loop_guards[uid] or "none"),
             "self_recent_execution={}".format(self.execution_facts[uid] or ["none"]),
             "self_required_recovery={}".format(self.required_recoveries[uid] or "none"),
+            "self_recovery_advice={}".format(self.recovery_advice[uid] or "none"),
             "self_action_guidance={}".format(self._revision_advice(uid)),
             "Use exact entity IDs from your private world description; never add a label such as room: before an ID.",
         ])

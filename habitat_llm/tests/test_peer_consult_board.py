@@ -19,14 +19,21 @@ class _Node:
 
 
 class _Graph:
-    def __init__(self, objects=(), rooms=(), furniture=(), robot=(), human=()):
+    def __init__(self, objects=(), rooms=(), furniture=(), robot=(), human=(), object_locations=None):
         self.objects, self.rooms, self.furniture = [_Node(x) for x in objects], [_Node(x) for x in rooms], [_Node(x) for x in furniture]
         self.robot, self.human = set(robot), set(human)
+        self.object_locations = object_locations or {}
     def get_all_objects(self): return self.objects
     def get_all_rooms(self): return self.rooms
     def get_all_furnitures(self): return self.furniture
     def get_all_receptacles(self): return []
     def is_object_with_agent(self, obj, who): return obj.name in (self.robot if who == "robot" else self.human)
+    def find_furniture_for_object(self, obj):
+        name = self.object_locations.get(obj.name)
+        return _Node(name) if name else None
+    def get_room_for_entity(self, obj):
+        room = self.object_locations.get(obj.name, "").split("@")[1] if "@" in self.object_locations.get(obj.name, "") else None
+        return _Node(room) if room else None
 
 
 class _Measure:
@@ -97,7 +104,26 @@ class PeerConsultV4Tests(unittest.TestCase):
 
     def test_structured_outcome_and_no_privileged_completion(self):
         self.assertEqual(execution_outcome({"status": "success"}, True), "terminal_success")
-        self.assertIn("completion_oracle=official_env_runner_only", self.board.decision_card(0))
+        self.assertIn("completion_status=not_supplied_to_planner", self.board.decision_card(0))
+
+    def test_next_to_rejects_reference_known_to_be_on_another_furniture(self):
+        graph = _Graph(
+            objects=["candle", "holder"], furniture=["table_10", "table_30"],
+            object_locations={"holder": "table_30"},
+        )
+        intent = canonicalize_partnr_action(
+            0, ("Place", "candle,on,table_10,next_to,holder", None), graph
+        )
+        self.assertIn("must already be on destination", intent["error"])
+
+    def test_location_sharing_is_an_explicit_optional_plugin(self):
+        self.board.share_discovered_locations = True
+        graph0 = _Graph(
+            objects=["cup"], rooms=["kitchen_0"], furniture=["table_0"],
+            object_locations={"cup": "table_0"},
+        )
+        self.board.observe({0: graph0, 1: _Graph()})
+        self.assertIn("cup at table_0", self.board.decision_card(1))
 
     def test_candidate_domains_are_local_complete_and_not_ranked(self):
         candidates = build_local_action_candidates(
@@ -161,6 +187,18 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertIn("self_required_recovery=Navigate[cup]", card)
         self.assertNotIn("Pick[cup] failed", self.board.decision_card(1))
         self.assertNotIn("cup: needs_recovery", self.board.decision_card(1))
+
+    def test_distance_failure_adds_private_advisory_recovery_without_forcing_it(self):
+        _, _, intents = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Pick", "input": "cup", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_failure",
+            "response": "Failed to pick: Not close enough to the object.",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.assertIn("self_recovery_advice=Navigate[cup]", self.board.decision_card(0))
+        self.assertIn("self_required_recovery=none", self.board.decision_card(0))
+        self.assertNotIn("Navigate[cup]", self.board.decision_card(1))
 
     def test_successful_required_navigation_clears_recovery(self):
         self.board.enforce_required_recovery = True

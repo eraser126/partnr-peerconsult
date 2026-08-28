@@ -31,6 +31,10 @@ evaluation:
     enforce_room_exploration_dedup: false
     enforce_required_recovery: false
     enforce_placement_stability: false
+    # V2-style PARTNR collaboration aid. It shares only compact typed
+    # object-location facts; set false for the strict-privacy ablation.
+    share_discovered_locations: true
+    max_shared_locations: 5
   no_progress_guard:
     enabled: true
     min_elapsed_seconds: 600
