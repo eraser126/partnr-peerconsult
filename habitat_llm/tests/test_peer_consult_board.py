@@ -103,12 +103,12 @@ class PeerConsultV4Tests(unittest.TestCase):
         candidates = build_local_action_candidates(
             0, self.graph, {"Explore", "Navigate", "Pick", "Rearrange", "Place", "Wait"}
         )
-        self.assertIn("Explore[room]: room in [hall_0, kitchen_0]", candidates)
-        self.assertIn("Navigate[target]: target in [book, cup, hall_0, kitchen_0, table_0]", candidates)
+        self.assertIn("Explore[room]: any locally known room ID.", candidates)
+        self.assertIn("Navigate[target]: any locally known object, furniture, or room ID.", candidates)
         self.assertIn("Rearrange[object,relation,destination,constraint,reference]", candidates)
-        self.assertIn("object in [book, cup]", candidates)
+        self.assertNotIn("book, cup", candidates)
         self.assertIn("Place[held_object,relation,destination,constraint,reference]", candidates)
-        self.assertIn("held_object in [none]", candidates)
+        self.assertIn("held_object must be shown as held by you", candidates)
         self.assertIn("not a priority order", candidates)
 
     def test_official_completion_adapter_reads_only_success_bit(self):

@@ -34,24 +34,6 @@ def _world_names(world_graph: Any, method: str) -> set[str]:
         return set()
 
 
-def _format_domain(values: Iterable[str]) -> str:
-    names = sorted({str(value) for value in values if str(value)})
-    return "[{}]".format(", ".join(names)) if names else "[none]"
-
-
-def _held_object_names(agent_uid: int, world_graph: Any, objects: Iterable[Any]) -> set[str]:
-    """Read only the requesting agent's public-in-its-graph holding relation."""
-    holder = "robot" if int(agent_uid) == 0 else "human"
-    held = set()
-    for obj in objects:
-        try:
-            if world_graph.is_object_with_agent(obj, holder):
-                held.add(str(getattr(obj, "name", "")))
-        except Exception:
-            continue
-    return held
-
-
 def build_local_action_candidates(
     agent_uid: int, world_graph: Any, available_actions: Iterable[str]
 ) -> str:
@@ -63,57 +45,42 @@ def build_local_action_candidates(
     peer-only or evaluator state.
     """
     tools = {str(action).lower() for action in available_actions}
-    objects = _world_names(world_graph, "get_all_objects")
-    rooms = _world_names(world_graph, "get_all_rooms")
-    furniture = _world_names(world_graph, "get_all_furnitures") | _world_names(
-        world_graph, "get_all_receptacles"
-    )
-    try:
-        held = _held_object_names(
-            agent_uid, world_graph, world_graph.get_all_objects()
-        )
-    except Exception:
-        held = set()
-
     lines = [
         "[Complete local legal-action domains]",
-        "Use only these exact local IDs. This is a domain, not a priority order.",
+        "Use exact IDs from your private world description above; do not invent IDs.",
+        "This is a complete domain, not a priority order. Entity IDs are not repeated here.",
     ]
     if "explore" in tools:
-        lines.append("Explore[room]: room in {}".format(_format_domain(rooms)))
+        lines.append("Explore[room]: any locally known room ID.")
     if "navigate" in tools:
-        lines.append(
-            "Navigate[target]: target in {}".format(
-                _format_domain(objects | rooms | furniture)
-            )
-        )
+        lines.append("Navigate[target]: any locally known object, furniture, or room ID.")
     if "pick" in tools:
-        lines.append("Pick[object]: object in {}".format(_format_domain(objects)))
+        lines.append("Pick[object]: any locally known object ID.")
     if "rearrange" in tools:
         lines.append(
             "Rearrange[object,relation,destination,constraint,reference]: "
-            "object in {}; relation in [on, within]; destination in {}; "
-            "constraint is None or next_to; reference in {} when next_to."
-            .format(_format_domain(objects), _format_domain(furniture), _format_domain(objects))
+            "object is any locally known object; relation in [on, within]; "
+            "destination is any locally known furniture; constraint is None or "
+            "next_to; reference is any locally known object when next_to."
         )
     if "place" in tools:
         lines.append(
             "Place[held_object,relation,destination,constraint,reference]: "
-            "held_object in {}; relation in [on, within]; destination in {}; "
-            "constraint is None or next_to; reference in {} when next_to."
-            .format(_format_domain(held), _format_domain(furniture), _format_domain(objects))
+            "held_object must be shown as held by you; relation in [on, within]; "
+            "destination is any locally known furniture; constraint is None or "
+            "next_to; reference is any locally known object when next_to."
         )
-    for action, targets in (
-        ("clean", objects),
-        ("fill", objects),
-        ("pour", objects),
-        ("poweron", objects),
-        ("poweroff", objects),
-        ("open", furniture),
-        ("close", furniture),
+    for action, target_type in (
+        ("clean", "object"),
+        ("fill", "object"),
+        ("pour", "object"),
+        ("poweron", "object"),
+        ("poweroff", "object"),
+        ("open", "furniture"),
+        ("close", "furniture"),
     ):
         if action in tools:
-            lines.append("{}[target]: target in {}".format(action.title(), _format_domain(targets)))
+            lines.append("{}[target]: any locally known {} ID.".format(action.title(), target_type))
     if "wait" in tools:
         lines.append("Wait[]: use only while an accepted skill is still executing.")
     lines.append("Done[] is runner-owned: do not emit it; the official completion adapter ends a solved episode.")
