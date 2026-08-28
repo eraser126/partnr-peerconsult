@@ -35,6 +35,12 @@ def main() -> None:
         default="PeerConsult V2 / OpenAI-compatible API",
         help="Method label written to the merged summary",
     )
+    parser.add_argument(
+        "--max-episodes",
+        type=int,
+        default=0,
+        help="Merge only the first N dataset episodes; 0 requires full split coverage.",
+    )
     args = parser.parse_args()
 
     run_dirs = sorted(Path().glob(args.run_glob))
@@ -59,6 +65,10 @@ def main() -> None:
 
     with gzip.open(args.dataset, "rt", encoding="utf-8") as handle:
         dataset_ids = [str(x["episode_id"]) for x in json.load(handle)["episodes"]]
+    if args.max_episodes < 0:
+        raise SystemExit("--max-episodes must be non-negative")
+    if args.max_episodes:
+        dataset_ids = dataset_ids[: args.max_episodes]
     expected, actual = set(dataset_ids), set(rows_by_id)
     if actual != expected:
         raise SystemExit(

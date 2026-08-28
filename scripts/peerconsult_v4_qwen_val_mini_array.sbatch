@@ -20,12 +20,17 @@ export PARTNR_MODEL="${PARTNR_MODEL:-qwen/qwen3-vl-4b}"
 shard_index="${SLURM_ARRAY_TASK_ID:-0}"
 shard_count="${SLURM_ARRAY_TASK_COUNT:-1}"
 run_id="${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID}}_${shard_index}"
+subset_episodes="${PARTNR_SUBSET_EPISODES:-0}"
 
 case "$shard_count:$shard_index" in
   *[!0-9:]*|:*|0:*|*:) echo "Invalid Slurm array shard: $shard_index/$shard_count" >&2; exit 2 ;;
 esac
 if (( shard_index >= shard_count )); then
   echo "Invalid Slurm array shard: $shard_index/$shard_count" >&2
+  exit 2
+fi
+if [[ ! "$subset_episodes" =~ ^[0-9]+$ ]]; then
+  echo "PARTNR_SUBSET_EPISODES must be a non-negative integer" >&2
   exit 2
 fi
 
@@ -49,16 +54,33 @@ echo "Started: $(date -Is)"
 echo "Node: $(hostname)"
 echo "Shard: $shard_index/$shard_count"
 echo "Model: $PARTNR_MODEL"
+echo "Subset episodes: ${subset_episodes:-0} (0 means full val_mini)"
 nvidia-smi
+
+# A subset is split round-robin so every array task receives a disjoint set of
+# episode indices.  This keeps a small four-GPU run representative without
+# evaluating all 369 val_mini episodes.
+episode_selector=("+episode_mod_filter=[$shard_index,$shard_count]")
+if (( subset_episodes > 0 )); then
+  episode_indices=()
+  for (( episode=shard_index; episode<subset_episodes; episode+=shard_count )); do
+    episode_indices+=("$episode")
+  done
+  if (( ${#episode_indices[@]} == 0 )); then
+    echo "Shard $shard_index has no assigned subset episodes" >&2
+    exit 2
+  fi
+  episode_selector=("+episode_indices=[$(IFS=,; echo "${episode_indices[*]}")]")
+fi
 
 python -m habitat_llm.examples.planner_demo \
   --config-name=baselines/peer_consult_v4_zero_shot_react_summary \
   hydra.run.dir="logs/peerconsult-v4-qwen-val-mini-${run_id}" \
   habitat.dataset.data_path="data/datasets/partnr_episodes/v0_0/val_mini.json.gz" \
-  +episode_mod_filter="[$shard_index,$shard_count]" \
+  "${episode_selector[@]}" \
   num_proc=1 \
-  llm@evaluation.agents.agent_0.planner.plan_config.llm=tatu_chat \
-  llm@evaluation.agents.agent_1.planner.plan_config.llm=tatu_chat \
+  llm@evaluation.agents.agent_0.planner.plan_config.llm=peerconsult_v4_qwen_chat \
+  llm@evaluation.agents.agent_1.planner.plan_config.llm=peerconsult_v4_qwen_chat \
   evaluation.agents.agent_0.planner.plan_config.constrained_generation=False \
   evaluation.agents.agent_1.planner.plan_config.constrained_generation=False \
   evaluation.log_data=True \
