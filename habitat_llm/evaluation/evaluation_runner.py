@@ -572,13 +572,25 @@ class EvaluationRunner:
         """
         if "replan_required" not in planner_info:
             return
+        # A V4 proposal can be freshly generated yet rejected by the factual
+        # validator before any motor skill starts.  It must count for the
+        # no-progress guard, but it is not an executed action-history entry.
+        peerconsult_execution_actions = planner_info.get(
+            "peerconsult_execution_actions"
+        )
         # Update the agent states in environment interface
         for agent_id, value in planner_info["replanned"].items():
             if value:
-                # An action must be returned if the planner replans
-                assert agent_id in planner_info["high_level_actions"]
+                if peerconsult_execution_actions is not None:
+                    if agent_id not in peerconsult_execution_actions:
+                        continue
+                    action = peerconsult_execution_actions[agent_id]
+                else:
+                    # Existing planners retain the original invariant.
+                    assert agent_id in planner_info["high_level_actions"]
+                    action = planner_info["high_level_actions"][agent_id]
                 action_history_object = ActionHistoryElement(
-                    action=planner_info["high_level_actions"][agent_id],
+                    action=action,
                     timestamp=planner_info["sim_step_count"],
                     agent_uid=agent_id,
                     world_graph=copy.deepcopy(self.env_interface.world_graph),

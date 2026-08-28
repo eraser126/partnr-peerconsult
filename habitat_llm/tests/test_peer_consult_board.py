@@ -11,6 +11,7 @@ from habitat_llm.peer_consult.partnr_adapter import (
 from habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner import (
     PeerConsultDecentralizedEvaluationRunner,
 )
+from habitat_llm.evaluation.evaluation_runner import EvaluationRunner
 
 
 class _Node:
@@ -120,6 +121,23 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertTrue(runner._official_completion_reached())
         for measure in curr_env.task.measurements.measures.values():
             self.assertEqual(measure.update_calls, 1)
+
+    def test_rejected_v4_proposal_is_not_written_as_an_executed_action(self):
+        runner = object.__new__(EvaluationRunner)
+        runner.env_interface = type("Interface", (), {})()
+        runner.env_interface.agent_action_history = {0: []}
+        runner.env_interface.world_graph = {0: self.graph}
+        runner.update_agent_action_history(
+            {
+                "replan_required": {0: True},
+                "replanned": {0: True},
+                "high_level_actions": {},
+                "peerconsult_execution_actions": {},
+                "responses": {},
+                "sim_step_count": 1,
+            }
+        )
+        self.assertEqual(runner.env_interface.agent_action_history[0], [])
 
     def test_loop_guard_rejects_exact_repeat_once(self):
         proposal = {0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)}
