@@ -1,0 +1,974 @@
+{
+  "name": "PARTNR val_mini representative subset v1",
+  "purpose": "56-episode stratified evaluation subset for PeerConsult V4",
+  "source_dataset": "data/datasets/partnr_episodes/v0_0/val_mini.json.gz",
+  "seed": "peerconsult-v4-partnr-representative-v1",
+  "task_quotas": {
+    "rearrange": 18,
+    "temporal": 18,
+    "spatial": 12,
+    "object_states": 8
+  },
+  "episode_indices": [
+    12,
+    14,
+    34,
+    44,
+    45,
+    48,
+    50,
+    57,
+    65,
+    75,
+    90,
+    92,
+    93,
+    95,
+    115,
+    119,
+    121,
+    130,
+    132,
+    148,
+    163,
+    169,
+    170,
+    171,
+    173,
+    174,
+    177,
+    181,
+    187,
+    193,
+    197,
+    200,
+    225,
+    229,
+    231,
+    233,
+    254,
+    255,
+    263,
+    265,
+    266,
+    278,
+    294,
+    296,
+    301,
+    324,
+    326,
+    342,
+    354,
+    357,
+    358,
+    360,
+    361,
+    362,
+    363,
+    365
+  ],
+  "category_counts": {
+    "rearrange": 18,
+    "temporal": 18,
+    "spatial": 12,
+    "object_states": 8
+  },
+  "episodes": [
+    {
+      "episode_index": 12,
+      "episode_id": "12",
+      "task_gen": "rearrange",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move all three apples and both spoons from the table to the kitchen."
+    },
+    {
+      "episode_index": 14,
+      "episode_id": "14",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the apple from the hallway to the bedroom. Take a toy food from the living room and put it on a kitchen counter. Move the squeezer from the kitchen counter to the kitchen cabinet. Take the toy bee from the bedroom and put it on a different bedside table."
+    },
+    {
+      "episode_index": 34,
+      "episode_id": "34",
+      "task_gen": "temporal",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "Help me move some objects from the living room to the bedroom. First, take the credit card from the coffee table and place it on the bedside table. Then, bring the handbag from the chair and place it on the bed. Finally, take the cushion from the chair and place it on the bed."
+    },
+    {
+      "episode_index": 44,
+      "episode_id": "44",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_inside+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_inside",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the phone to the bedroom table. Take the backpack and ball to the bedroom chest of drawers and place them inside."
+    },
+    {
+      "episode_index": 45,
+      "episode_id": "45",
+      "task_gen": "rearrange",
+      "complexity": "very_long_8_plus",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:very_long_8_plus",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me set the table for people in the dining room. Place plates, glasses, and forks at each setting. There should be four."
+    },
+    {
+      "episode_index": 48,
+      "episode_id": "48",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the electric kettle from the kitchen to the entryway. Move the lamp from the living room to the entryway. Move the backpack from the bedroom to the entryway. Move the candle from the entryway to the living room."
+    },
+    {
+      "episode_index": 50,
+      "episode_id": "50",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the sushi mat, ramekin, and toy vehicle from the living room table to the dining room table."
+    },
+    {
+      "episode_index": 57,
+      "episode_id": "57",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:SameArgConstraint",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me clean up the toys in the bedroom. Move both toy vehicles and the toy animal together in a new set of drawers."
+    },
+    {
+      "episode_index": 65,
+      "episode_id": "65",
+      "task_gen": "rearrange",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "size:short_1_2",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me move the sushi mat and toy vehicle from the living room to the entryway."
+    },
+    {
+      "episode_index": 75,
+      "episode_id": "75",
+      "task_gen": "rearrange",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:short_1_2",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the stuffed toy and toy vehicle to the couch."
+    },
+    {
+      "episode_index": 90,
+      "episode_id": "90",
+      "task_gen": "rearrange",
+      "complexity": "very_long_8_plus",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:very_long_8_plus",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me tidy up the office and living room. Put all the toy food and candle holder on the other table in the living room, and the toy construction set, casserole, and tennis racquet on the table in the gym?"
+    },
+    {
+      "episode_index": 92,
+      "episode_id": "92",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:DifferentArgConstraint",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me prepare the living room for a dinner party. Move the cellphone to the living room table. Put the toy fire truck and candle holder on the other living room tables."
+    },
+    {
+      "episode_index": 93,
+      "episode_id": "93",
+      "task_gen": "rearrange",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_inside+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_inside",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me tidy up the house. Put the toy vehicles on the bedroom table. Put the toy animals inside the other chest. Move the lamp to another living room table."
+    },
+    {
+      "episode_index": 95,
+      "episode_id": "95",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_inside",
+      "features": [
+        "constraint:none",
+        "predicate:is_inside",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me clean up the table for dinner in the dining room. Place a spoon, a fork, and a toy fire truck in the cabinet."
+    },
+    {
+      "episode_index": 115,
+      "episode_id": "115",
+      "task_gen": "rearrange",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "size:short_1_2",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the candle and plant from the living room to the dining room?"
+    },
+    {
+      "episode_index": 119,
+      "episode_id": "119",
+      "task_gen": "rearrange",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_inside+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_inside",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Can you put the cushion in the living room, and put the toy vehicle inside the other chest of drawers in the bedroom? Also, can you put the laptop on the table in the office?"
+    },
+    {
+      "episode_index": 121,
+      "episode_id": "121",
+      "task_gen": "rearrange",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me move toy vehicle, toy foods, and stuffed toy from the bedroom to the dining room. Place the toy vehicle on the table, all the toy food on the table, and the stuffed toy on the chair."
+    },
+    {
+      "episode_index": 130,
+      "episode_id": "130",
+      "task_gen": "spatial",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_next_to",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "size:short_1_2",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the phone from the entryway to the bedroom and place it next to the bedside table."
+    },
+    {
+      "episode_index": 132,
+      "episode_id": "132",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_in_room+is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, move the electric kettle from the kitchen to the entryway. Next, move the lamp from the living room to the entryway. Then, move the backpack from the bedroom to the entryway. Finally, move the candle from the entryway to the living room and place it next to the sofa."
+    },
+    {
+      "episode_index": 148,
+      "episode_id": "148",
+      "task_gen": "spatial",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_next_to+is_on_top",
+      "features": [
+        "constraint:SameArgConstraint",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move the toy fire truck, toy animal, and stuffed toy to the same chest of drawers in the bedroom placing them next to each other."
+    },
+    {
+      "episode_index": 163,
+      "episode_id": "163",
+      "task_gen": "spatial",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_next_to+is_on_floor",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_floor",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me move the toy fire truck and the toy bee from the chair in the living room to the floor next to the chair in the living room."
+    },
+    {
+      "episode_index": 169,
+      "episode_id": "169",
+      "task_gen": "temporal",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_next_to+is_on_top",
+      "features": [
+        "constraint:SameArgConstraint",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "Help me organize my living room. First, place 2 credit cards on the chair next to the table. Then place the gaming console and canister next to each other on the same chair?"
+    },
+    {
+      "episode_index": 170,
+      "episode_id": "170",
+      "task_gen": "spatial",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Place the mug, squeezer, and toy food on the table in the hallway, next to each other."
+    },
+    {
+      "episode_index": 171,
+      "episode_id": "171",
+      "task_gen": "spatial",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_next_to",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move 1 apple and 1 spoon from the table to the kitchen and place them next to each other."
+    },
+    {
+      "episode_index": 173,
+      "episode_id": "173",
+      "task_gen": "spatial",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_inside+is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_inside",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Put away one toy vehicle and the backpack in the bedroom drawers. Leave one toy vehicle on the bedroom table next to the toy bee."
+    },
+    {
+      "episode_index": 174,
+      "episode_id": "174",
+      "task_gen": "spatial",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_next_to",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "size:short_1_2",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me move the phone from the living room to the bedroom. Place it next to the bed."
+    },
+    {
+      "episode_index": 177,
+      "episode_id": "177",
+      "task_gen": "rearrange",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me move a toy fire truck, 2 apples, a credit card, and a toy airplane from the bedroom to the living room."
+    },
+    {
+      "episode_index": 181,
+      "episode_id": "181",
+      "task_gen": "temporal",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_1",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:short_1_2",
+        "temporal_edges:edges_1"
+      ],
+      "instruction": "Help me move some things around. First, put the sponge on the bedside table. Finally, put the plant saucer on the kitchen counter."
+    },
+    {
+      "episode_index": 187,
+      "episode_id": "187",
+      "task_gen": "spatial",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_next_to",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me move my mug, spoon, and plant from the living room to my bedroom. Place them next to each other."
+    },
+    {
+      "episode_index": 193,
+      "episode_id": "193",
+      "task_gen": "spatial",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me set the table for dinner in the dining room. Put the lamp next to the spoon and fork on the table."
+    },
+    {
+      "episode_index": 197,
+      "episode_id": "197",
+      "task_gen": "spatial",
+      "complexity": "very_long_8_plus",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_next_to+is_on_floor",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_floor",
+        "size:very_long_8_plus",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Organize the office by putting the laptop, credit card, tray, sushi mat, and electronic cable back on the floor and place them next to each other."
+    },
+    {
+      "episode_index": 200,
+      "episode_id": "200",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_inside+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_inside",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "Help me tidy up the house. First, put the toy vehicles away in the chest of drawers. Then, put the toy animals in a new chest of drawers. Next, move the lamp to the living room and place it on the table."
+    },
+    {
+      "episode_index": 225,
+      "episode_id": "225",
+      "task_gen": "spatial",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_next_to+is_on_floor+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_floor",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Can you put the cushion on the floor in the office, next to the desk, and can you put the laptop on the table in the office?"
+    },
+    {
+      "episode_index": 229,
+      "episode_id": "229",
+      "task_gen": "spatial",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_next_to+is_on_floor",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "predicate:is_on_floor",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me move the toy fire truck from the dining room to the living room. Place it on the floor next to the sofa."
+    },
+    {
+      "episode_index": 231,
+      "episode_id": "231",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_next_to+is_on_floor+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_floor",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, help me move the toy fire truck and the toy bee from the chair in the kitchen to the table in the bedroom. Then, place them on the floor next to the chair in the living room."
+    },
+    {
+      "episode_index": 233,
+      "episode_id": "233",
+      "task_gen": "temporal",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_next_to+is_on_floor+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_floor",
+        "predicate:is_on_top",
+        "size:medium_3_4",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, move the credit card from the table in the bedroom to the counter in the kitchen. Then place it on the floor next to the stool in the bedroom."
+    },
+    {
+      "episode_index": 254,
+      "episode_id": "254",
+      "task_gen": "temporal",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_1",
+      "predicate_signature": "is_in_room+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_on_top",
+        "size:short_1_2",
+        "temporal_edges:edges_1"
+      ],
+      "instruction": "First, bring the toy fire truck from the bedroom to the living room. Then, place it on the washer or dryer."
+    },
+    {
+      "episode_index": 255,
+      "episode_id": "255",
+      "task_gen": "temporal",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_1",
+      "predicate_signature": "is_in_room+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_on_top",
+        "size:short_1_2",
+        "temporal_edges:edges_1"
+      ],
+      "instruction": "First, bring the toy bee from the bedroom to the living room. Then, move it to the kitchen and place it on the counter."
+    },
+    {
+      "episode_index": 263,
+      "episode_id": "263",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_in_room+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, help me move my mug, spoon, and plant from the living room to my bedroom. Then, place them all out of the way in the kitchen cabinets."
+    },
+    {
+      "episode_index": 265,
+      "episode_id": "265",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, ensure that the phone is next to the picture frame. Then, move the phone and picture frame to the counter in the kitchen and put the spectacles on the counter close to the phone and picture frame."
+    },
+    {
+      "episode_index": 266,
+      "episode_id": "266",
+      "task_gen": "temporal",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_1",
+      "predicate_signature": "is_in_room+is_next_to",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "size:short_1_2",
+        "temporal_edges:edges_1"
+      ],
+      "instruction": "First, move the toy fire truck from the living room to the bedroom. Then, place it on the ground in the bathroom next to a table."
+    },
+    {
+      "episode_index": 278,
+      "episode_id": "278",
+      "task_gen": "rearrange",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Help me set the table for dinner in the dining room. Move the spoons, forks, and toy fire truck to the table in the living room."
+    },
+    {
+      "episode_index": 294,
+      "episode_id": "294",
+      "task_gen": "temporal",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_1",
+      "predicate_signature": "is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "size:short_1_2",
+        "temporal_edges:edges_1"
+      ],
+      "instruction": "First, move the lamp from the bedroom to the living room. Then, place it in the office."
+    },
+    {
+      "episode_index": 296,
+      "episode_id": "296",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_in_room+is_next_to",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, move the laptop and then the cellphone from the office to the living room. Then, place them next to each other in the bedroom."
+    },
+    {
+      "episode_index": 301,
+      "episode_id": "301",
+      "task_gen": "temporal",
+      "complexity": "short_1_2",
+      "temporal_edges": "edges_1",
+      "predicate_signature": "is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:short_1_2",
+        "temporal_edges:edges_1"
+      ],
+      "instruction": "First, help me move my laptop from the chair to the table in the workout room. Then, place it next to the the bed in the bedroom."
+    },
+    {
+      "episode_index": 324,
+      "episode_id": "324",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_inside+is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_inside",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, help me clean up the toys in the bedroom and put the toy vehicle and toy animal inside the other chest of drawers in the bedroom. Finally, move them to the shelves in the closet and place them close to each other."
+    },
+    {
+      "episode_index": 326,
+      "episode_id": "326",
+      "task_gen": "temporal",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_in_room+is_next_to+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, move the phone and then the watch from the dining room table to the living room table. Then place them next to each other in the kitchen."
+    },
+    {
+      "episode_index": 342,
+      "episode_id": "342",
+      "task_gen": "temporal",
+      "complexity": "very_long_8_plus",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_inside+is_next_to+is_on_top",
+      "features": [
+        "constraint:SameArgConstraint",
+        "predicate:is_inside",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "size:very_long_8_plus",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "First, move the toy fire truck and the stuffed toys to the top of the chest of drawers in the bedroom. Then move them along with the ball to the cabinet in the kitchen and place them next to each other."
+    },
+    {
+      "episode_index": 354,
+      "episode_id": "354",
+      "task_gen": "object_states",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_in_room+is_on_top+is_powered_on",
+      "features": [
+        "constraint:none",
+        "predicate:is_in_room",
+        "predicate:is_on_top",
+        "predicate:is_powered_on",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Can you help me set up a place for meditation? Move the cushion and the candle to the living room. Place the candle on another table and turn it on."
+    },
+    {
+      "episode_index": 357,
+      "episode_id": "357",
+      "task_gen": "object_states",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_2_plus",
+      "predicate_signature": "is_clean+is_filled+is_in_room+is_powered_on",
+      "features": [
+        "constraint:none",
+        "predicate:is_clean",
+        "predicate:is_filled",
+        "predicate:is_in_room",
+        "predicate:is_powered_on",
+        "size:long_5_7",
+        "temporal_edges:edges_2_plus"
+      ],
+      "instruction": "Move the kettle and the jug from the dining room to the kitchen and fill the kettle with water, then turn on the kettle. Finally clean the dining room table."
+    },
+    {
+      "episode_index": 358,
+      "episode_id": "358",
+      "task_gen": "object_states",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_clean+is_next_to+is_on_top+is_powered_on",
+      "features": [
+        "constraint:none",
+        "predicate:is_clean",
+        "predicate:is_next_to",
+        "predicate:is_on_top",
+        "predicate:is_powered_on",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Clean the bench in the garage. Move the book and lamp to the garage bench from the kitchen. Turn on the lamp. Place the book next to it."
+    },
+    {
+      "episode_index": 360,
+      "episode_id": "360",
+      "task_gen": "object_states",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_clean+is_on_top",
+      "features": [
+        "constraint:none",
+        "predicate:is_clean",
+        "predicate:is_on_top",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Dust off the shelves in the tv room. Clean all of the toys in the tv room and move them to the shelves in the tv room."
+    },
+    {
+      "episode_index": 361,
+      "episode_id": "361",
+      "task_gen": "object_states",
+      "complexity": "very_long_8_plus",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_clean+is_in_room+is_powered_on",
+      "features": [
+        "constraint:none",
+        "predicate:is_clean",
+        "predicate:is_in_room",
+        "predicate:is_powered_on",
+        "size:very_long_8_plus",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Bring the laptop and the electronic cable to the mudroom and turn on the laptop. Clean the mudroom cabinets."
+    },
+    {
+      "episode_index": 362,
+      "episode_id": "362",
+      "task_gen": "object_states",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_clean+is_on_top+is_powered_on",
+      "features": [
+        "constraint:none",
+        "predicate:is_clean",
+        "predicate:is_on_top",
+        "predicate:is_powered_on",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Let's clean up the living room. Move all of the toys from the floor to the wardrobe in the closet and turn on the lamp on the table. Make sure that the closet wardrobe is clean."
+    },
+    {
+      "episode_index": 363,
+      "episode_id": "363",
+      "task_gen": "object_states",
+      "complexity": "long_5_7",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_clean+is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_clean",
+        "predicate:is_in_room",
+        "size:long_5_7",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Take the dirty dishes from the living room and wash them in the kitchen."
+    },
+    {
+      "episode_index": 365,
+      "episode_id": "365",
+      "task_gen": "object_states",
+      "complexity": "medium_3_4",
+      "temporal_edges": "edges_0",
+      "predicate_signature": "is_clean+is_in_room",
+      "features": [
+        "constraint:none",
+        "predicate:is_clean",
+        "predicate:is_in_room",
+        "size:medium_3_4",
+        "temporal_edges:edges_0"
+      ],
+      "instruction": "Move all the toys to the bedroom and dust off the cushion in the living room."
+    }
+  ]
+}

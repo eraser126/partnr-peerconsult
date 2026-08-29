@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge disjoint PARTNR val_mini array shards and validate full coverage."""
+"""Merge disjoint PARTNR val_mini shards and validate their intended coverage."""
 
 import argparse
 import csv
@@ -41,6 +41,11 @@ def main() -> None:
         default=0,
         help="Merge only the first N dataset episodes; 0 requires full split coverage.",
     )
+    parser.add_argument(
+        "--episode-indices-file",
+        type=Path,
+        help="JSON manifest containing an `episode_indices` list. Overrides --max-episodes.",
+    )
     args = parser.parse_args()
 
     run_dirs = sorted(Path().glob(args.run_glob))
@@ -64,11 +69,23 @@ def main() -> None:
         source_shards.append({"directory": str(run_dir), "episodes": len(rows)})
 
     with gzip.open(args.dataset, "rt", encoding="utf-8") as handle:
-        dataset_ids = [str(x["episode_id"]) for x in json.load(handle)["episodes"]]
+        all_dataset_ids = [str(x["episode_id"]) for x in json.load(handle)["episodes"]]
     if args.max_episodes < 0:
         raise SystemExit("--max-episodes must be non-negative")
-    if args.max_episodes:
-        dataset_ids = dataset_ids[: args.max_episodes]
+    if args.episode_indices_file:
+        if not args.episode_indices_file.is_file():
+            raise SystemExit(f"Missing episode manifest: {args.episode_indices_file}")
+        manifest = json.loads(args.episode_indices_file.read_text(encoding="utf-8"))
+        indices = manifest.get("episode_indices")
+        if not isinstance(indices, list) or not indices:
+            raise SystemExit("Episode manifest must contain a non-empty `episode_indices` list")
+        if any(not isinstance(index, int) for index in indices) or len(set(indices)) != len(indices):
+            raise SystemExit("Episode manifest indices must be unique integers")
+        if any(index < 0 or index >= len(all_dataset_ids) for index in indices):
+            raise SystemExit("Episode manifest contains an out-of-range index")
+        dataset_ids = [all_dataset_ids[index] for index in indices]
+    else:
+        dataset_ids = all_dataset_ids[: args.max_episodes] if args.max_episodes else all_dataset_ids
     expected, actual = set(dataset_ids), set(rows_by_id)
     if actual != expected:
         raise SystemExit(
@@ -105,6 +122,8 @@ def main() -> None:
         "metrics": averages,
         "source_shards": source_shards,
     }
+    if args.episode_indices_file:
+        summary["episode_manifest"] = str(args.episode_indices_file)
     with (output / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
         handle.write("\n")
