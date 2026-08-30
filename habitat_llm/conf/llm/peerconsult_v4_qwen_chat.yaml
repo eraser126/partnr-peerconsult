@@ -13,6 +13,15 @@ user_tag: ''
 assistant_tag: ''
 eot_tag: ''
 keep_message_history: False
+# Transient gateway errors (including HTTP 503 wrapped as APIConnectionError)
+# are retried with bounded exponential backoff.  Invalid requests and context
+# errors are deliberately not retried.
+max_transient_attempts: 6
+retry_base_delay_s: 3
+retry_max_delay_s: 60
+# Agent-specific scripts may set this for agent 1 to avoid a simultaneous
+# first request from both PeerConsult agents.
+initial_request_delay_s: 0
 
 generation_params:
   model: ${oc.env:PARTNR_MODEL,qwen/qwen3-vl-4b}

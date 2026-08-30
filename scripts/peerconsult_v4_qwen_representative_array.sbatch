@@ -77,6 +77,7 @@ python -m habitat_llm.examples.planner_demo \
   num_proc=1 \
   llm@evaluation.agents.agent_0.planner.plan_config.llm=peerconsult_v4_qwen_chat \
   llm@evaluation.agents.agent_1.planner.plan_config.llm=peerconsult_v4_qwen_chat \
+  evaluation.agents.agent_1.planner.plan_config.llm.initial_request_delay_s=3 \
   evaluation.agents.agent_0.planner.plan_config.constrained_generation=False \
   evaluation.agents.agent_1.planner.plan_config.constrained_generation=False \
   evaluation.log_data=True \
