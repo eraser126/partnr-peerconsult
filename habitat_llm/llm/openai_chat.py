@@ -123,6 +123,18 @@ class OpenAIChat(BaseLLM):
             self.llm_conf.get("context_overflow_safety_tokens", 16)
         )
         self._context_output_cap: Optional[int] = None
+        # Shared method-level input budget.  V4 and the centralized baseline
+        # use the same Qwen config, so neither gets an implicit context-window
+        # advantage when the local service is shared by several render jobs.
+        self.input_token_budget = int(self.llm_conf.get("input_token_budget", 0))
+        self.input_tokenizer_path = self.llm_conf.get("input_tokenizer_path", "")
+        self.prompt_head_token_budget = int(
+            self.llm_conf.get("prompt_head_token_budget", 3500)
+        )
+        self.prompt_tail_min_tokens = int(
+            self.llm_conf.get("prompt_tail_min_tokens", 1024)
+        )
+        self._input_tokenizer = None
 
     def _validate_conf(self):
         if self.generation_params.stream:
@@ -167,6 +179,99 @@ class OpenAIChat(BaseLLM):
             capped,
         )
         return retry_params
+
+    def _get_input_tokenizer(self):
+        """Lazily load the exact local Qwen tokenizer used for prompt budgets."""
+        if self._input_tokenizer is None:
+            if not self.input_tokenizer_path:
+                raise ValueError(
+                    "input_tokenizer_path is required when input_token_budget is set"
+                )
+            from transformers import AutoTokenizer
+
+            self._input_tokenizer = AutoTokenizer.from_pretrained(
+                self.input_tokenizer_path, trust_remote_code=False
+            )
+        return self._input_tokenizer
+
+    def _chat_token_count(self, messages) -> int:
+        tokenizer = self._get_input_tokenizer()
+        return len(
+            tokenizer.apply_chat_template(
+                messages, tokenize=True, add_generation_prompt=True
+            )
+        )
+
+    def _apply_input_token_budget(self, messages):
+        """Keep task instructions and the latest world-state feedback within a
+        shared token budget, dropping only stale middle execution history.
+        """
+        if self.input_token_budget <= 0:
+            return messages
+        if not messages or not isinstance(messages[-1].get("content"), str):
+            logger.warning("LLM input budget skipped for non-text prompt.")
+            return messages
+
+        raw_tokens = self._chat_token_count(messages)
+        if raw_tokens <= self.input_token_budget:
+            logger.info(
+                "LLM input budget: raw_tokens=%d sent_tokens=%d budget=%d compacted=False",
+                raw_tokens,
+                raw_tokens,
+                self.input_token_budget,
+            )
+            return messages
+
+        tokenizer = self._get_input_tokenizer()
+        prompt_tokens = tokenizer.encode(messages[-1]["content"], add_special_tokens=False)
+        if len(prompt_tokens) < 2:
+            raise ValueError("Cannot compact an over-budget empty prompt")
+
+        # The prefix contains the task, tool contract, and initial grounding;
+        # the suffix contains the newest action result and object state.  The
+        # discarded middle consists of stale, repeated ReAct turns.
+        head_tokens = min(self.prompt_head_token_budget, len(prompt_tokens) // 2)
+        tail_tokens = max(
+            self.prompt_tail_min_tokens,
+            min(len(prompt_tokens) - head_tokens, self.input_token_budget - head_tokens),
+        )
+        marker = (
+            "\n\n[Earlier execution history was compacted. The task above and "
+            "the newest observations/state below are authoritative.]\n\n"
+        )
+        compacted_messages = list(messages)
+        for _ in range(64):
+            compacted_prompt = (
+                tokenizer.decode(prompt_tokens[:head_tokens])
+                + marker
+                + tokenizer.decode(prompt_tokens[-tail_tokens:])
+            )
+            compacted_messages[-1] = dict(messages[-1], content=compacted_prompt)
+            sent_tokens = self._chat_token_count(compacted_messages)
+            if sent_tokens <= self.input_token_budget:
+                logger.info(
+                    "LLM input budget: raw_tokens=%d sent_tokens=%d budget=%d "
+                    "compacted=True head_tokens=%d tail_tokens=%d",
+                    raw_tokens,
+                    sent_tokens,
+                    self.input_token_budget,
+                    head_tokens,
+                    tail_tokens,
+                )
+                return compacted_messages
+
+            reduction = max(128, sent_tokens - self.input_token_budget + 32)
+            if tail_tokens > self.prompt_tail_min_tokens:
+                tail_tokens = max(self.prompt_tail_min_tokens, tail_tokens - reduction)
+            elif head_tokens > self.prompt_tail_min_tokens:
+                head_tokens = max(self.prompt_tail_min_tokens, head_tokens - reduction)
+            else:
+                break
+
+        raise ValueError(
+            f"Unable to compact prompt below shared input token budget "
+            f"{self.input_token_budget}"
+        )
 
     def _create_completion_with_retry(self, request_params, request_timeout, label: str):
         """Call the provider with bounded, jittered retries for transient faults."""
@@ -257,6 +362,8 @@ class OpenAIChat(BaseLLM):
             # Multimodal prompt
             image_detail = "low"  # high/low/auto
             messages.append(generate_message(prompt, image_detail=image_detail))
+
+        messages = self._apply_input_token_budget(messages)
 
         # Remove optional values the API rejects when null.  Keep the
         # remaining standard Chat Completions controls (temperature, top_p,

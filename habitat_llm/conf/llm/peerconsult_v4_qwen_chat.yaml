@@ -13,6 +13,12 @@ user_tag: ''
 assistant_tag: ''
 eot_tag: ''
 keep_message_history: False
+# Shared input limit for both PeerConsult V4 and the centralized ReAct
+# baseline. The cap is measured with Qwen's chat template, not characters.
+input_token_budget: ${oc.env:PARTNR_INPUT_TOKEN_BUDGET,12000}
+input_tokenizer_path: ${oc.env:PARTNR_QWEN_TOKENIZER_PATH,/data/user/hd68631/models/Qwen3-VL-4B-Instruct}
+prompt_head_token_budget: 3500
+prompt_tail_min_tokens: 1024
 # Transient gateway errors (including HTTP 503 wrapped as APIConnectionError)
 # are retried with bounded exponential backoff.  Invalid requests and context
 # errors are deliberately not retried.
