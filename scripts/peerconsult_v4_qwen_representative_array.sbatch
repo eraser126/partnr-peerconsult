@@ -31,6 +31,7 @@ module load anaconda3
 module load shangwang
 source activate "$HOME/env/partnr"
 cd "$HOME/projects/partnr-planner"
+source scripts/configure_local_llm_no_proxy.sh
 test -f "$manifest"
 mkdir -p logs
 

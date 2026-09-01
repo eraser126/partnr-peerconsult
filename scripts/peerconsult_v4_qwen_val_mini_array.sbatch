@@ -38,6 +38,7 @@ module load anaconda3
 module load shangwang
 source activate "$HOME/env/partnr"
 cd "$HOME/projects/partnr-planner"
+source scripts/configure_local_llm_no_proxy.sh
 mkdir -p logs
 
 export HABITAT_NVIDIA_GL="$HOME/opt/nvidia-gl/570.211.01/extracted/NVIDIA-Linux-x86_64-570.211.01-no-compat32"
