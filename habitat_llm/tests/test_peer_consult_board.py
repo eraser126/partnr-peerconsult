@@ -11,6 +11,7 @@ from habitat_llm.peer_consult.partnr_adapter import (
     execution_outcome,
     rewrite_held_rearrange_to_place,
 )
+from habitat_llm.llm.instruct.utils import actions_parser
 from habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner import (
     PeerConsultDecentralizedEvaluationRunner,
 )
@@ -65,6 +66,11 @@ class _AbortPlanner:
         self.reason = reason
 
 
+class _ParserAgent:
+    def __init__(self, uid):
+        self.uid = uid
+
+
 def _proposal(action, new=True):
     return {"is_new": new, "is_done": False, "high_level_action": action}
 
@@ -74,6 +80,15 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.board = PeerConsultBoard()
         self.graph = _Graph(["cup", "book"], ["kitchen_0", "hall_0"], ["table_0"])
         self.board.observe({0: self.graph, 1: self.graph})
+
+    def test_legacy_four_field_transport_action_gets_partnr_reference_none(self):
+        actions = actions_parser(
+            [_ParserAgent(0), _ParserAgent(1)],
+            "Agent_0_Action: Rearrange[mug_0,on,table_1,None]\n"
+            "Agent_1_Action: Place[cup_0,within,cabinet_1,None]",
+        )
+        self.assertEqual(actions[0], ("Rearrange", "mug_0,on,table_1,None,None", None))
+        self.assertEqual(actions[1], ("Place", "cup_0,within,cabinet_1,None,None", None))
 
     def test_rearrange_claims_source_not_destination(self):
         final, reviews, intents = self.board.review({

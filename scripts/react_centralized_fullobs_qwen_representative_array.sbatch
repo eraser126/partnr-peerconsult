@@ -80,6 +80,10 @@ python -m habitat_llm.examples.planner_demo \
   llm@evaluation.planner.plan_config.llm=peerconsult_v4_qwen_chat \
   world_model.partial_obs=False \
   evaluation.planner.plan_config.constrained_generation=False \
+  +evaluation.no_progress_guard.enabled=True \
+  +evaluation.no_progress_guard.min_elapsed_seconds=600 \
+  +evaluation.no_progress_guard.decision_window=8 \
+  +evaluation.no_progress_guard.max_elapsed_seconds=1800 \
   evaluation.log_data=True \
   evaluation.log_detailed_traces=True
 

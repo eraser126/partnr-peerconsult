@@ -31,6 +31,13 @@ prompt: |-
         Agent_1_Action: <next action call for human agent>
         Assigned!
 
+        For every Rearrange or Place action, use exactly five comma-separated
+        arguments: [object, relation, destination, spatial_constraint,
+        reference_object]. When no spatial constraint is required, write both
+        final fields explicitly as None. For example:
+        Rearrange[mug_0,on,table_1,None,None]
+        Place[mug_0,on,table_1,None,None]
+
         Here is an example:
         Thought: Since there are multiple task-relevant objects to be rearranged, I will ask each agent to go to one of them
         Agent_0_Action: Navigate[<obj name1>]

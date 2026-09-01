@@ -328,6 +328,25 @@ def split_string(input_string, delimiter=","):
     return substrings
 
 
+def _complete_partnr_transport_arguments(action_name: str, action_input: str) -> str:
+    """Accept the legacy four-field transport spelling used by ReAct prompts.
+
+    PARTNR's Oracle ``Rearrange`` and ``Place`` tools require five fields:
+    object, relation, destination, spatial constraint, and reference object.
+    Older centralized prompts and several OpenAI-compatible models commonly
+    omit only the final reference field when the constraint is ``None``.  In
+    that unambiguous case, append the required literal ``None`` before the
+    action reaches the simulator.  Do not guess missing object, relation, or
+    destination fields.
+    """
+    if action_name.strip().lower() not in {"rearrange", "place"}:
+        return action_input
+    fields = [field.strip() for field in action_input.split(",")]
+    if len(fields) == 4 and fields[3].lower() in {"", "none", "null"}:
+        return ",".join(fields + ["None"])
+    return action_input
+
+
 def most_matching_string(input_str, candidate_strings):
     """
     Method to get most matching string
@@ -536,6 +555,9 @@ def actions_parser(
             # Split the action info into action name and action arguments (inputs)
             action_name, action_input = action_info.split("[")
             action_input = action_input.rstrip("]")
+            action_input = _complete_partnr_transport_arguments(
+                action_name, action_input
+            )
 
             # Set action_input to None if its empty
             # Useful in handling cases like Wait[], FindAgentAction[]
