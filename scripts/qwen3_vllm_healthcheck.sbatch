@@ -16,6 +16,8 @@ REPO_DIR=/data/user/hd68631/projects/partnr-planner
 ENV_DIR=/data/user/hd68631/env/qwen3-vllm
 MODEL_DIR=/data/user/hd68631/models/Qwen3-VL-4B-Instruct
 PORT="${QWEN3_VLLM_CHECK_PORT:-18000}"
+CONTEXT_LEN="${QWEN3_VLLM_CONTEXT_LEN:-16384}"
+MAX_NUM_SEQS="${QWEN3_VLLM_MAX_NUM_SEQS:-2}"
 
 cd "${REPO_DIR}"
 mkdir -p logs
@@ -37,9 +39,9 @@ vllm serve "${MODEL_DIR}" \
   --host 127.0.0.1 \
   --port "${PORT}" \
   --dtype auto \
-  --max-model-len 8192 \
+  --max-model-len "${CONTEXT_LEN}" \
   --gpu-memory-utilization 0.85 \
-  --max-num-seqs 4 \
+  --max-num-seqs "${MAX_NUM_SEQS}" \
   > "logs/qwen3_vllm_server_${SLURM_JOB_ID}.log" 2>&1 &
 SERVER_PID=$!
 
@@ -55,4 +57,27 @@ curl --silent --fail \
   -X POST "http://127.0.0.1:${PORT}/v1/chat/completions" \
   -d '{"model":"qwen3-vl-4b-local","messages":[{"role":"user","content":"Reply with only: OK"}],"temperature":0,"max_tokens":8}'
 echo
+python - "${PORT}" <<'PY'
+import json
+import sys
+from urllib.request import Request, urlopen
+
+port = sys.argv[1]
+# A 9K-token-style text prompt verifies that the configured 16K context is
+# genuinely accepted, rather than merely checking that the server can start.
+payload = {
+    "model": "qwen3-vl-4b-local",
+    "messages": [{"role": "user", "content": " token" * 9000}],
+    "temperature": 0,
+    "max_tokens": 8,
+}
+request = Request(
+    f"http://127.0.0.1:{port}/v1/chat/completions",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+)
+with urlopen(request, timeout=120) as response:
+    assert response.status == 200, response.status
+print("Long-context local vLLM request passed.")
+PY
 echo "Qwen3-VL local vLLM health check passed."

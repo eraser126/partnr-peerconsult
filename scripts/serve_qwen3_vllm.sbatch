@@ -17,6 +17,15 @@ ENV_DIR=/data/user/hd68631/env/qwen3-vllm
 MODEL_DIR=/data/user/hd68631/models/Qwen3-VL-4B-Instruct
 PORT="${QWEN3_VLLM_PORT:-8000}"
 SERVED_MODEL="${QWEN3_VLLM_MODEL_NAME:-qwen3-vl-4b-local}"
+# 16K admits the long full-observation PARTNR prompts while retaining enough
+# KV-cache capacity for the two-agent V4 setup on one RTX 4090.
+CONTEXT_LEN="${QWEN3_VLLM_CONTEXT_LEN:-16384}"
+MAX_NUM_SEQS="${QWEN3_VLLM_MAX_NUM_SEQS:-2}"
+
+if [[ ! "${CONTEXT_LEN}" =~ ^[1-9][0-9]*$ || ! "${MAX_NUM_SEQS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "QWEN3_VLLM_CONTEXT_LEN and QWEN3_VLLM_MAX_NUM_SEQS must be positive integers." >&2
+  exit 2
+fi
 
 cd "${REPO_DIR}"
 mkdir -p logs
@@ -31,6 +40,7 @@ fi
 HOST="$(hostname -f)"
 echo "PARTNR endpoint: http://${HOST}:${PORT}/v1"
 echo "PARTNR model: ${SERVED_MODEL}"
+echo "PARTNR context window: ${CONTEXT_LEN}; max concurrent sequences: ${MAX_NUM_SEQS}"
 echo "Set OPENAI_API_KEY=local-qwen3-vllm in the PARTNR job."
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
@@ -39,6 +49,6 @@ exec vllm serve "${MODEL_DIR}" \
   --host 0.0.0.0 \
   --port "${PORT}" \
   --dtype auto \
-  --max-model-len 8192 \
+  --max-model-len "${CONTEXT_LEN}" \
   --gpu-memory-utilization 0.85 \
-  --max-num-seqs 4
+  --max-num-seqs "${MAX_NUM_SEQS}"

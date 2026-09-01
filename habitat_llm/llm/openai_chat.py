@@ -7,6 +7,7 @@
 import logging
 import os
 import random
+import re
 import time
 from typing import Dict, List, Optional
 
@@ -17,6 +18,12 @@ from habitat_llm.llm.base_llm import BaseLLM, Prompt
 
 
 logger = logging.getLogger(__name__)
+
+
+_CONTEXT_OVERFLOW_RE = re.compile(
+    r"maximum context length is (?P<context>\d+) tokens and your request has "
+    r"(?P<input>\d+) input tokens"
+)
 
 
 def log_completion_usage(completion, attempt: str) -> None:
@@ -105,6 +112,17 @@ class OpenAIChat(BaseLLM):
             self.llm_conf.get("initial_request_delay_s", 0.0)
         )
         self._initial_request_pending = self.initial_request_delay_s > 0
+        # The provider reports exact token counts for an over-budget request.
+        # Keep enough room for a valid skill call before retrying with a
+        # smaller output budget; otherwise surface the genuine overflow rather
+        # than repeatedly submitting the same invalid call.
+        self.context_overflow_min_output_tokens = int(
+            self.llm_conf.get("context_overflow_min_output_tokens", 64)
+        )
+        self.context_overflow_safety_tokens = int(
+            self.llm_conf.get("context_overflow_safety_tokens", 16)
+        )
+        self._context_output_cap: Optional[int] = None
 
     def _validate_conf(self):
         if self.generation_params.stream:
@@ -118,6 +136,37 @@ class OpenAIChat(BaseLLM):
         if isinstance(error, APIStatusError):
             return error.status_code in {429, 500, 502, 503, 504}
         return False
+
+    def _fit_output_budget_after_context_error(self, error, request_params):
+        """Return a smaller request when an OpenAI-compatible server reports
+        exact input/context token counts; otherwise return ``None``.
+        """
+        if not isinstance(error, APIStatusError) or error.status_code != 400:
+            return None
+        match = _CONTEXT_OVERFLOW_RE.search(str(error))
+        if match is None:
+            return None
+
+        context_limit = int(match.group("context"))
+        input_tokens = int(match.group("input"))
+        available = context_limit - input_tokens - self.context_overflow_safety_tokens
+        previous = int(request_params.get("max_tokens", 0) or 0)
+        capped = min(previous, available)
+        if capped < self.context_overflow_min_output_tokens or capped >= previous:
+            return None
+
+        retry_params = dict(request_params)
+        retry_params["max_tokens"] = capped
+        self._context_output_cap = capped
+        logger.warning(
+            "LLM request exceeds context (%d input / %d window); reducing "
+            "max_tokens from %d to %d and retrying once.",
+            input_tokens,
+            context_limit,
+            previous,
+            capped,
+        )
+        return retry_params
 
     def _create_completion_with_retry(self, request_params, request_timeout, label: str):
         """Call the provider with bounded, jittered retries for transient faults."""
@@ -136,6 +185,13 @@ class OpenAIChat(BaseLLM):
                     **request_params, timeout=request_timeout
                 )
             except Exception as error:
+                context_retry = self._fit_output_budget_after_context_error(
+                    error, request_params
+                )
+                if context_retry is not None:
+                    return self.client.chat.completions.create(
+                        **context_retry, timeout=request_timeout
+                    )
                 if not self._is_retryable_provider_error(error) or attempt == attempts:
                     raise
                 delay = min(
@@ -214,6 +270,7 @@ class OpenAIChat(BaseLLM):
                 if key != "model" and value is not None
             },
         }
+        self._context_output_cap = None
         completion = self._create_completion_with_retry(
             request_params, request_timeout, "initial response"
         )
@@ -228,6 +285,8 @@ class OpenAIChat(BaseLLM):
         if self.last_finish_reason == "length":
             previous_limit = int(request_params.get("max_tokens", 0) or 0)
             retry_limit = min(max(1024, previous_limit * 2), 2048)
+            if self._context_output_cap is not None:
+                retry_limit = min(retry_limit, self._context_output_cap)
             if retry_limit > previous_limit:
                 retry_params = dict(request_params)
                 retry_params["max_tokens"] = retry_limit
