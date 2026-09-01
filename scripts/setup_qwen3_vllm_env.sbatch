@@ -3,7 +3,9 @@
 #SBATCH --partition=9654
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
-#SBATCH --time=02:00:00
+# Large CUDA wheels are downloaded once into the isolated environment.  Give
+# mirror retries sufficient time; later reruns are normally much faster.
+#SBATCH --time=12:00:00
 #SBATCH --output=logs/qwen3_vllm_setup_%j.out
 #SBATCH --error=logs/qwen3_vllm_setup_%j.err
 

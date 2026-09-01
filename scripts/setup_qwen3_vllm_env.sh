@@ -9,6 +9,12 @@ MODEL_DIR="${QWEN3_VL_MODEL_DIR:-/data/user/hd68631/models/Qwen3-VL-4B-Instruct}
 module load shangwang
 module load anaconda3
 
+# The cluster's default route to pypi.org is frequently interrupted for large
+# CUDA wheels.  Use a mainland mirror while still going through shangwang.
+export PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}"
+export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
+export PIP_DISABLE_PIP_VERSION_CHECK=1
+
 if [[ ! -f "${MODEL_DIR}/config.json" ]]; then
   echo "Model weights are missing: ${MODEL_DIR}" >&2
   exit 2
@@ -19,11 +25,11 @@ if [[ ! -x "${ENV_DIR}/bin/python" ]]; then
 fi
 
 source activate "${ENV_DIR}"
-python -m pip install --upgrade pip setuptools wheel
+python -m pip install --upgrade --retries 12 pip setuptools wheel
 
 # vLLM supplies a CUDA-enabled PyTorch build compatible with the installed
 # driver. Qwen3-VL requires a recent Transformers release.
-python -m pip install --upgrade \
+python -m pip install --upgrade --retries 12 \
   "vllm>=0.10.0,<0.12.0" \
   "transformers>=4.57.0,<5" \
   "qwen-vl-utils>=0.0.14"
