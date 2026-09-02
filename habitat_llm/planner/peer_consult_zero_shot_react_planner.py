@@ -33,6 +33,19 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self.peerconsult_card = card
         self._peerconsult_progress_signature = progress_signature
 
+    def _release_hold_after_progress(self) -> bool:
+        """Resume planning when either agent produces a public positive fact."""
+        if (
+            self._peerconsult_hold_signature is None
+            or self._peerconsult_hold_signature == self._peerconsult_progress_signature
+        ):
+            return False
+        self._peerconsult_hold_signature = None
+        self._peerconsult_last_rejection = None
+        self.replan_required = True
+        self._peerconsult_refresh_prompt = True
+        return True
+
     def prepare_prompt(self, input_instruction, world_graph, **kwargs):
         _, params = super().prepare_prompt(input_instruction, world_graph, should_format=False, **kwargs)
         params["peerconsult_card"] = self.peerconsult_card
@@ -82,8 +95,7 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
                 return {"is_new": False, "is_done": False,
                         "high_level_action": ("Wait", None, None),
                         "thought": None, "print": "", "hold": True}
-            self._peerconsult_hold_signature = None
-            self._peerconsult_last_rejection = None
+            self._release_hold_after_progress()
         if self.curr_prompt == "" or self._peerconsult_refresh_prompt:
             self._fresh_prompt(instruction, observations, world_graph[uid])
         if self.trace == "":

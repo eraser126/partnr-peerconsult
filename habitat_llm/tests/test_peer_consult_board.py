@@ -357,6 +357,9 @@ class PeerConsultV4Tests(unittest.TestCase):
             planner._peerconsult_hold_signature,
             planner._peerconsult_progress_signature,
         )
+        self.assertTrue(planner._release_hold_after_progress())
+        self.assertIsNone(planner._peerconsult_hold_signature)
+        self.assertTrue(planner.replan_required)
 
     def test_terminal_failure_is_retained_as_bounded_self_recovery_fact(self):
         self.board.enforce_required_recovery = True
