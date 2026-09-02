@@ -4,7 +4,10 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=64G
-#SBATCH --time=12:00:00
+# Keep the serving endpoint alive throughout a multi-shard evaluation.  The
+# renderer arrays may run for several hours and cannot recover from a server
+# that exits at the scheduler's default short limit.
+#SBATCH --time=48:00:00
 #SBATCH --output=logs/qwen3_vllm_server_%j.out
 #SBATCH --error=logs/qwen3_vllm_server_%j.err
 
@@ -20,7 +23,7 @@ SERVED_MODEL="${QWEN3_VLLM_MODEL_NAME:-qwen3-vl-4b-local}"
 # 16K admits the long full-observation PARTNR prompts while retaining enough
 # KV-cache capacity for the two-agent V4 setup on one RTX 4090.
 CONTEXT_LEN="${QWEN3_VLLM_CONTEXT_LEN:-16384}"
-MAX_NUM_SEQS="${QWEN3_VLLM_MAX_NUM_SEQS:-2}"
+MAX_NUM_SEQS="${QWEN3_VLLM_MAX_NUM_SEQS:-3}"
 
 if [[ ! "${CONTEXT_LEN}" =~ ^[1-9][0-9]*$ || ! "${MAX_NUM_SEQS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "QWEN3_VLLM_CONTEXT_LEN and QWEN3_VLLM_MAX_NUM_SEQS must be positive integers." >&2

@@ -6,6 +6,10 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
+# The 4090 node has 500G host RAM.  An omitted --mem inherits the full-node
+# default and serializes the array, so reserve a measured per-renderer share.
+# Together with the 64G vLLM server, three renderers fit on one node.
+#SBATCH --mem=140G
 #SBATCH --time=48:00:00
 #SBATCH --export=ALL
 #SBATCH --output=logs/%x-%A_%a.out
