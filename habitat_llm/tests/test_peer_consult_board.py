@@ -372,19 +372,12 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.board.observe({0: self.graph, 1: self.graph})
         self.assertEqual(self.board.required_recovery_action(0), ("Navigate", "cup", None))
 
-    def test_replanning_budget_holds_until_public_progress(self):
+    def test_public_progress_resets_replanning_budget(self):
         planner = object.__new__(PeerConsultZeroShotReactPlanner)
-        planner._agents = [_ParserAgent(0)]
-        planner.is_done = False
-        planner.replan_required = True
         planner.replanning_count = 5
-        planner.planner_config = type("Config", (), {"replanning_threshold": 5})()
-        planner._peerconsult_progress_signature = ("stable",)
-        planner._peerconsult_hold_signature = None
-        planner._peerconsult_forced_action = None
-        proposal = planner.prepare_proposal("task", {}, {0: self.graph})
-        self.assertTrue(proposal["hold"])
-        self.assertEqual(proposal["hold_reason"], "replanning_budget_without_progress")
+        planner._peerconsult_progress_signature = ("before",)
+        planner.set_decision_card("new public fact", ("after",))
+        self.assertEqual(planner.replanning_count, 0)
 
     def test_terminal_failure_is_retained_as_bounded_self_recovery_fact(self):
         self.board.enforce_required_recovery = True

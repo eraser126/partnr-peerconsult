@@ -120,16 +120,13 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
                 "print": "", "intent": intent, "forced": True,
             }
         if self.replan_required and self.replanning_count >= self.planner_config.replanning_threshold:
-            # The former one-shot Done[] at this threshold was rejected and
-            # then allowed unlimited further requests. Hold instead until a
-            # positive public fact changes the situation.
-            self._peerconsult_hold_signature = self._peerconsult_progress_signature
-            return {
-                "is_new": False, "is_done": False,
-                "high_level_action": ("Wait", None, None),
-                "thought": None, "print": "", "hold": True,
-                "hold_reason": "replanning_budget_without_progress",
-            }
+            # This budget is not a task timeout: long temporal tasks can
+            # still be making valid local progress after many decisions.
+            # Restart its accounting instead of globally pausing the agent.
+            # Exact repeated actions remain blocked by the board's action-
+            # identity loop guard, and stalled motor skills by the watchdog.
+            self.replanning_count = 0
+            self._peerconsult_refresh_prompt = True
         if self.curr_prompt == "" or self._peerconsult_refresh_prompt:
             self._fresh_prompt(instruction, observations, world_graph[uid])
         if self.trace == "":

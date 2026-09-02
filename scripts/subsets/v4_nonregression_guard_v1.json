@@ -1,0 +1,6 @@
+{
+  "name": "PeerConsult V4 non-regression guard subset v1",
+  "purpose": "Guard set for rule changes: the 15 episodes solved by pre-optimization V4 plus the 10 episodes improved by the first coordination optimization. This is a development regression set, not a benchmark report.",
+  "source_dataset": "data/datasets/partnr_episodes/v0_0/val_mini.json.gz",
+  "episode_indices": [12, 48, 50, 57, 65, 75, 93, 115, 130, 148, 169, 170, 171, 174, 181, 187, 193, 197, 229, 254, 255, 265, 294, 296, 326]
+}
