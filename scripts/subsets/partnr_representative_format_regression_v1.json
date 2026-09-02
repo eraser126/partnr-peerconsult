@@ -1,0 +1,4 @@
+{
+  "description": "Centralized Qwen baseline regression set: episodes skipped by the pre-format-contract run 340185.",
+  "episode_indices": [44, 163, 171, 177, 233, 294, 361]
+}
