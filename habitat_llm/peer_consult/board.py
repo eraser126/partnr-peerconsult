@@ -226,7 +226,14 @@ class PeerConsultBoard:
             if action_name == "pick" and action_input:
                 recovery_target = action_input
             elif action_name in {"place", "rearrange"} and len(values) >= 3:
-                recovery_target = values[2]
+                # Rearrange is a composite navigate-pick-place action. A
+                # failed pick needs navigation to the source object, whereas
+                # a failed place needs navigation to the destination.
+                failed_pick = (
+                    "failed to pick" in response.lower()
+                    or "not close enough to the object" in response.lower()
+                )
+                recovery_target = values[0] if action_name == "rearrange" and failed_pick else values[2]
         if recovery_target:
             recovery = "Navigate[{}]".format(recovery_target)
             self.recovery_advice[uid] = recovery
@@ -249,7 +256,11 @@ class PeerConsultBoard:
                 task["status"] = "completed"
                 self.progress_versions[uid] += 1
                 self._event(uid, "task_completed", task_id)
-            else:
+            # A competing or stale executor can report failure after another
+            # agent has already completed the same canonical task. Completion
+            # is a monotonic public fact: never let that later failure reopen
+            # the task and authorize a duplicate transport.
+            elif task.get("status") != "completed":
                 task["status"] = "suspended"
                 self._event(uid, "task_failure", task_id)
             self._release(task_id)

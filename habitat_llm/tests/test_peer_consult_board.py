@@ -115,6 +115,31 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(final[0][0], "Wait")
         self.assertEqual(reviews[0]["reason"], "completed_task")
 
+    def test_late_competing_failure_cannot_reopen_completed_task(self):
+        action = ("Rearrange", "cup,on,table_0,None,None", None)
+        _, _, intents = self.board.review({
+            0: _proposal(action), 1: _proposal(("Wait", None, None), False)
+        })
+        task_id = intents[0]["task_id"]
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Rearrange", "input": action[1],
+            "task_id": task_id, "terminal": True,
+            "outcome": "terminal_success", "response": "Successful execution!",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {1: {
+            "id": 2, "agent": 1, "action": "Rearrange", "input": action[1],
+            "task_id": task_id, "terminal": True,
+            "outcome": "terminal_failure", "response": "Failed to pick! Not close enough to the object.",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        final, reviews, _ = self.board.review({
+            0: _proposal(("Wait", None, None), False), 1: _proposal(action)
+        })
+        self.assertEqual(self.board.tasks[task_id]["status"], "completed")
+        self.assertEqual(final[1][0], "Wait")
+        self.assertEqual(reviews[0]["reason"], "completed_task")
+
     def test_long_transport_claim_survives_peer_boundaries(self):
         transport = ("Rearrange", "cup,on,table_0,None,None", None)
         self.board.review({0: _proposal(transport), 1: _proposal(("Wait", None, None), False)})
@@ -348,6 +373,19 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(reviews[0]["reason"], "required_recovery")
         final, _, _ = self.board.review({0: _proposal(("Navigate", "table_0", None)), 1: _proposal(("Wait", None, None), False)})
         self.assertEqual(final[0][0], "Navigate")
+
+    def test_rearrange_pick_distance_failure_recovers_to_source_object(self):
+        self.board.enforce_required_recovery = True
+        action = ("Rearrange", "cup,on,table_0,None,None", None)
+        _, _, intents = self.board.review({0: _proposal(action), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Rearrange", "input": action[1],
+            "task_id": intents[0]["task_id"], "terminal": True,
+            "outcome": "terminal_failure",
+            "response": "Unexpected failure! - Failed to pick! Not close enough to the object.",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.assertIn("self_required_recovery=Navigate[cup]", self.board.decision_card(0))
 
     def test_successful_place_temporarily_blocks_undoing_the_relation(self):
         self.board.enforce_placement_stability = True

@@ -25,11 +25,11 @@ evaluation:
     max_execution_facts: 6
     max_ledger_entries: 8
     max_public_report_chars: 480
-    # Optional PARTNR research aids.  They are disabled in the V4 baseline:
-    # the core shares lifecycle facts, not raw private observations or policy.
+    # Rule-based safeguards operate only over public action/executor facts;
+    # they never reveal another agent's raw observations or evaluator state.
     publish_exploration_reports: false
-    enforce_room_exploration_dedup: false
-    enforce_required_recovery: false
+    enforce_room_exploration_dedup: true
+    enforce_required_recovery: true
     enforce_placement_stability: false
     # V2-style PARTNR collaboration aid. It shares only compact typed
     # object-location facts; set false for the strict-privacy ablation.
@@ -40,9 +40,9 @@ evaluation:
     max_action_wall_time_s: 300
   no_progress_guard:
     enabled: true
-    min_elapsed_seconds: 600
+    min_elapsed_seconds: 300
     decision_window: 8
-    max_elapsed_seconds: 1800
+    max_elapsed_seconds: 900
   agents:
     agent_0:
       planner:
