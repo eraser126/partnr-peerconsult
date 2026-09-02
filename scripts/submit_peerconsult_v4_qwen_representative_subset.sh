@@ -1,12 +1,12 @@
 #!/bin/bash
-# Submit the fixed 56-episode representative PARTNR subset on 1, 2, or 4 GPUs.
+# Submit the fixed 56-episode representative PARTNR subset on 1--4 GPUs.
 
 set -euo pipefail
 
 cards="${1:-4}"
 manifest="${2:-scripts/subsets/partnr_representative_v1.json}"
-if [[ ! "$cards" =~ ^(1|2|4)$ ]]; then
-  echo "Usage: bash scripts/submit_peerconsult_v4_qwen_representative_subset.sh [1|2|4] [manifest.json]" >&2
+if [[ ! "$cards" =~ ^(1|2|3|4)$ ]]; then
+  echo "Usage: bash scripts/submit_peerconsult_v4_qwen_representative_subset.sh [1|2|3|4] [manifest.json]" >&2
   exit 2
 fi
 : "${OPENAI_API_KEY:?Source scripts/peerconsult_v4_qwen_env.sh first.}"
