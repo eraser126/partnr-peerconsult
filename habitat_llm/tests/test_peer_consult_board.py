@@ -361,6 +361,31 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertIsNone(planner._peerconsult_hold_signature)
         self.assertTrue(planner.replan_required)
 
+    def test_required_recovery_is_available_as_exact_board_action(self):
+        self.board.enforce_required_recovery = True
+        _, _, intents = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})
+        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
+            "id": 1, "action": "Pick", "input": "cup", "task_id": intents[0]["task_id"],
+            "terminal": True, "outcome": "terminal_failure",
+            "response": "Failed to pick! Not close enough to the object.",
+        }}})
+        self.board.observe({0: self.graph, 1: self.graph})
+        self.assertEqual(self.board.required_recovery_action(0), ("Navigate", "cup", None))
+
+    def test_replanning_budget_holds_until_public_progress(self):
+        planner = object.__new__(PeerConsultZeroShotReactPlanner)
+        planner._agents = [_ParserAgent(0)]
+        planner.is_done = False
+        planner.replan_required = True
+        planner.replanning_count = 5
+        planner.planner_config = type("Config", (), {"replanning_threshold": 5})()
+        planner._peerconsult_progress_signature = ("stable",)
+        planner._peerconsult_hold_signature = None
+        planner._peerconsult_forced_action = None
+        proposal = planner.prepare_proposal("task", {}, {0: self.graph})
+        self.assertTrue(proposal["hold"])
+        self.assertEqual(proposal["hold_reason"], "replanning_budget_without_progress")
+
     def test_terminal_failure_is_retained_as_bounded_self_recovery_fact(self):
         self.board.enforce_required_recovery = True
         _, _, intents = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})

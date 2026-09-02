@@ -308,6 +308,20 @@ class PeerConsultBoard:
         value = str(intent.get("action", (None, None, None))[1] or "")
         return "{}[{}]".format(action, value) == recovery
 
+    def required_recovery_action(self, uid: int) -> Optional[Action]:
+        """Return a fact-derived recovery action without asking the LLM.
+
+        Recovery targets are created only from this agent's terminal executor
+        feedback.  Executing the exact recorded action is therefore a safety
+        continuation, not a task-selection policy or privileged observation.
+        """
+        recovery = self.required_recoveries.get(uid)
+        if not recovery or "[" not in recovery or not recovery.endswith("]"):
+            return None
+        name, value = recovery.split("[", 1)
+        name, value = name.strip(), value[:-1].strip()
+        return (name or None, value or None, None)
+
     def observe(self, world_graphs: Mapping[int, Any]) -> None:
         self.tick += 1
         self._consume_evidence()
@@ -479,6 +493,16 @@ class PeerConsultBoard:
     def _tasks(self, uid: int, status: str) -> List[str]:
         return sorted(task["id"] for task in self.tasks.values() if task.get("agent") == uid and task.get("status") == status)[-self.max_targets:]
 
+    def _completed_action_calls(self, uid: int) -> List[str]:
+        """Expose this agent's completed public actions in copy-readable form."""
+        actions = []
+        for task in self.tasks.values():
+            if task.get("agent") != uid or task.get("status") != "completed":
+                continue
+            identity = str(task.get("action_identity") or "")
+            actions.append(identity.split("|", 1)[-1] if "|" in identity else identity)
+        return sorted(action for action in actions if action)[-self.max_targets:]
+
     def _available_rooms(self, uid: int) -> List[str]:
         reserved_by_peer = {
             room
@@ -576,6 +600,11 @@ class PeerConsultBoard:
             "self_active_tasks={}".format(self._tasks(uid, "in_progress") or ["none"]),
             "self_suspended_tasks={}".format(self._tasks(uid, "suspended") or ["none"]),
             "self_completed_tasks={}".format(self._tasks(uid, "completed") or ["none"]),
+            "self_completed_action_calls={}".format(self._completed_action_calls(uid) or ["none"]),
+            "self_hand_constraint={}".format(
+                "holding {}; do not Pick or Rearrange until it is placed".format(self._held(uid))
+                if self._held(uid) else "none"
+            ),
             "peer_public_held={}".format(self._held(peer) or ["none"]),
             "peer_public_tasks={}".format(self._tasks(peer, "in_progress") or ["none"]),
             "peer_claims={}".format(claims or ["none"]),

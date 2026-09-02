@@ -28,10 +28,23 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self._peerconsult_progress_signature = None
         self._peerconsult_hold_signature = None
         self._peerconsult_last_rejection = None
+        self._peerconsult_forced_action = None
 
     def set_decision_card(self, card: str, progress_signature=None) -> None:
+        if (
+            self._peerconsult_progress_signature is not None
+            and progress_signature != self._peerconsult_progress_signature
+        ):
+            # The planning budget is scoped to a stagnant public state, not
+            # the entire episode. A completed task or new ownership fact
+            # merits a fresh bounded planning cycle.
+            self.replanning_count = 0
         self.peerconsult_card = card
         self._peerconsult_progress_signature = progress_signature
+
+    def set_forced_action(self, action) -> None:
+        """Set an exact board-derived recovery continuation, if any."""
+        self._peerconsult_forced_action = action
 
     def _release_hold_after_progress(self) -> bool:
         """Resume planning when either agent produces a public positive fact."""
@@ -96,6 +109,27 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
                         "high_level_action": ("Wait", None, None),
                         "thought": None, "print": "", "hold": True}
             self._release_hold_after_progress()
+        forced_action = getattr(self, "_peerconsult_forced_action", None)
+        if self.replan_required and forced_action:
+            action = tuple(forced_action)
+            intent = canonicalize_partnr_action(uid, action, world_graph[uid])
+            return {
+                "is_new": True, "is_done": False,
+                "high_level_action": tuple(intent["action"]),
+                "thought": "Execute the required executor recovery.",
+                "print": "", "intent": intent, "forced": True,
+            }
+        if self.replan_required and self.replanning_count >= self.planner_config.replanning_threshold:
+            # The former one-shot Done[] at this threshold was rejected and
+            # then allowed unlimited further requests. Hold instead until a
+            # positive public fact changes the situation.
+            self._peerconsult_hold_signature = self._peerconsult_progress_signature
+            return {
+                "is_new": False, "is_done": False,
+                "high_level_action": ("Wait", None, None),
+                "thought": None, "print": "", "hold": True,
+                "hold_reason": "replanning_budget_without_progress",
+            }
         if self.curr_prompt == "" or self._peerconsult_refresh_prompt:
             self._fresh_prompt(instruction, observations, world_graph[uid])
         if self.trace == "":
@@ -112,10 +146,7 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self.curr_prompt += "{}\n{}{}".format(llm_response, self.stopword, self.planner_config.llm.eot_tag)
         self.trace += "{}\n{}{}".format(llm_response, self.stopword, self.planner_config.llm.eot_tag)
         self.replanning_count += 1
-        if self.replanning_count - 1 == self.planner_config.replanning_threshold:
-            action, intent = ("Done", None, None), canonicalize_partnr_action(uid, ("Done", None, None), world_graph[uid])
-        else:
-            action, intent = self._validated_action(llm_response, world_graph[uid])
+        action, intent = self._validated_action(llm_response, world_graph[uid])
         return {"is_new": True, "is_done": False, "high_level_action": action, "thought": thought, "print": print_str, "intent": intent}
 
     def _ticket(self, action, proposal, response, terminal, task_id=None):
@@ -135,7 +166,9 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         if proposal.get("is_done"):
             return {}, self._done_info(proposal), True
         if proposal.get("hold"):
-            return {}, self._hold_info(proposal, "waiting_for_public_progress"), False
+            return {}, self._hold_info(
+                proposal, proposal.get("hold_reason", "waiting_for_public_progress")
+            ), False
         rejected = review.get("verdict") == "revise"
         parser_rejected = bool(final_action[2])
         if rejected or parser_rejected:

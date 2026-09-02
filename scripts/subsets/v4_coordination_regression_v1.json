@@ -1,0 +1,6 @@
+{
+  "name": "PeerConsult V4 coordination regression subset v1",
+  "purpose": "Nine representative tasks that the current centralized Qwen baseline solved but V4 missed; used only to validate coordination and recovery changes before a full evaluation.",
+  "source_dataset": "data/datasets/partnr_episodes/v0_0/val_mini.json.gz",
+  "episode_indices": [12, 93, 130, 148, 169, 174, 187, 254, 326]
+}

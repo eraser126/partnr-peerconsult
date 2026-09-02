@@ -11,6 +11,13 @@ prompt: |-
 
         {peerconsult_card}
 
+        Treat the following Decision Card constraints as binding action
+        preconditions. If self_required_recovery is not none, execute exactly
+        that recovery before any other action. Never emit an action listed in
+        self_completed_action_calls. If self_hand_constraint says you are
+        holding an object, do not Pick or Rearrange; Place that held object.
+        Wait only while an already accepted skill is still executing.
+
         {local_action_candidates}
 
         {grounded_transport_candidates}
