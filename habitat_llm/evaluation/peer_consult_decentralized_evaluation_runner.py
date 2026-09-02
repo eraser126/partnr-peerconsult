@@ -172,7 +172,7 @@ class PeerConsultDecentralizedEvaluationRunner(DecentralizedEvaluationRunner):
         for uid, planner in sorted(self.planner.items()):
             if not hasattr(planner, "set_decision_card"):
                 raise TypeError("PeerConsult runner requires PeerConsultZeroShotReactPlanner")
-            planner.set_decision_card(cards[uid])
+            planner.set_decision_card(cards[uid], self.board.progress_signature())
             proposals[uid] = planner.prepare_proposal(instruction, observations, world_graph)
 
         final_actions, reviews, intents = self.board.review(proposals)

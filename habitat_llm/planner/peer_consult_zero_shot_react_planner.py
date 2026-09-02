@@ -25,9 +25,13 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self._peerconsult_ticket_index = 0
         self._peerconsult_current_ticket: Dict[str, Any] = {}
         self._peerconsult_refresh_prompt = False
+        self._peerconsult_progress_signature = None
+        self._peerconsult_hold_signature = None
+        self._peerconsult_last_rejection = None
 
-    def set_decision_card(self, card: str) -> None:
+    def set_decision_card(self, card: str, progress_signature=None) -> None:
         self.peerconsult_card = card
+        self._peerconsult_progress_signature = progress_signature
 
     def prepare_prompt(self, input_instruction, world_graph, **kwargs):
         _, params = super().prepare_prompt(input_instruction, world_graph, should_format=False, **kwargs)
@@ -71,6 +75,15 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         uid = self._agents[0].uid
         if self.is_done:
             return {"is_new": False, "is_done": True, "high_level_action": ("Done", None, None), "thought": None, "print": ""}
+        if self._peerconsult_hold_signature is not None:
+            if self._peerconsult_hold_signature == self._peerconsult_progress_signature:
+                # Repeated factual rejections must not turn into an LLM call
+                # every simulator tick. Idle until a positive public fact.
+                return {"is_new": False, "is_done": False,
+                        "high_level_action": ("Wait", None, None),
+                        "thought": None, "print": "", "hold": True}
+            self._peerconsult_hold_signature = None
+            self._peerconsult_last_rejection = None
         if self.curr_prompt == "" or self._peerconsult_refresh_prompt:
             self._fresh_prompt(instruction, observations, world_graph[uid])
         if self.trace == "":
@@ -109,13 +122,31 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         uid, review, intent = self._agents[0].uid, (review or {}), (intent or {})
         if proposal.get("is_done"):
             return {}, self._done_info(proposal), True
+        if proposal.get("hold"):
+            return {}, self._hold_info(proposal, "waiting_for_public_progress"), False
         rejected = review.get("verdict") == "revise"
         parser_rejected = bool(final_action[2])
         if rejected or parser_rejected:
+            reason = review.get("reason") if rejected else final_action[2]
+            rejection_key = (reason, tuple(proposal.get("high_level_action") or ()))
+            # Give the model one revision attempt. If it repeats the exact
+            # factual rejection, wait for public progress without further API
+            # calls instead of looping every simulator tick.
+            if (
+                rejected
+                and reason in {"completed_task", "planning_loop_guard"}
+                and self._peerconsult_last_rejection == rejection_key
+            ):
+                self._peerconsult_hold_signature = self._peerconsult_progress_signature
+                self._peerconsult_last_rejection = None
+                self.last_high_level_actions = {}
+                self.replan_required = False
+                self._peerconsult_refresh_prompt = True
+                return {}, self._hold_info(proposal, "repeated_{}".format(reason)), False
+            self._peerconsult_last_rejection = rejection_key if rejected else None
             self.last_high_level_actions = {}
             self.replan_required = True
             self._peerconsult_refresh_prompt = True
-            reason = review.get("reason") if rejected else final_action[2]
             response = "validator: revise ({})".format(reason)
             ticket = self._ticket(final_action, proposal, response, True, intent.get("task_id"))
             return {}, {
@@ -128,6 +159,8 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
                 "replanning_count": {uid: self.replanning_count}, "agent_states": self.get_last_agent_states(),
                 "peerconsult_action_ticket": {uid: ticket},
             }, False
+        self._peerconsult_last_rejection = None
+        self._peerconsult_hold_signature = None
         self.last_high_level_actions = {uid: final_action}
         low_level_actions, responses = self.process_high_level_actions({uid: final_action}, observations)
         response = responses.get(uid, "")
@@ -157,6 +190,21 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self.last_high_level_actions = {}
         self.replan_required = True
         self._peerconsult_refresh_prompt = True
+
+    def _hold_info(self, proposal, reason: str):
+        """Return an inert V4 tick; no action or model replan is issued."""
+        uid = self._agents[0].uid
+        return {
+            "replanned": {uid: False}, "replan_required": {uid: False},
+            "responses": {}, "thought": {uid: proposal.get("thought")},
+            "is_done": {uid: False}, "print": proposal.get("print", ""),
+            "high_level_actions": {}, "peerconsult_execution_actions": {},
+            "prompts": {uid: self.curr_prompt}, "traces": {uid: self.trace},
+            "replanning_count": {uid: self.replanning_count},
+            "agent_states": self.get_last_agent_states(),
+            "peerconsult_action_ticket": {},
+            "peerconsult_waiting_for_progress": {uid: reason},
+        }
 
     def _done_info(self, proposal):
         uid = self._agents[0].uid

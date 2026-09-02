@@ -16,6 +16,9 @@ from habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner import 
     PeerConsultDecentralizedEvaluationRunner,
 )
 from habitat_llm.evaluation.evaluation_runner import EvaluationRunner
+from habitat_llm.planner.peer_consult_zero_shot_react_planner import (
+    PeerConsultZeroShotReactPlanner,
+)
 
 
 class _Node:
@@ -303,13 +306,57 @@ class PeerConsultV4Tests(unittest.TestCase):
         )
         self.assertEqual(runner.env_interface.agent_action_history[0], [])
 
-    def test_loop_guard_rejects_exact_repeat_once(self):
+    def test_loop_guard_rejects_exact_repeat_until_progress(self):
         proposal = {0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)}
         self.board.review(proposal)
         self.board.review(proposal)
         final, reviews, _ = self.board.review(proposal)
         self.assertEqual(final[0][0], "Wait")
         self.assertEqual(reviews[0]["reason"], "planning_loop_guard")
+        # Rejecting an identical retry must not clear the guard; otherwise
+        # Qwen can alternate between an accepted retry and a rejected retry.
+        final, reviews, _ = self.board.review(proposal)
+        self.assertEqual(final[0][0], "Wait")
+        self.assertEqual(reviews[0]["reason"], "planning_loop_guard")
+        # A verified state transition permits the action again.
+        self.board.progress_versions[0] += 1
+        final, reviews, _ = self.board.review(proposal)
+        self.assertEqual(final[0][0], "Pick")
+        self.assertEqual(reviews, [])
+
+    def test_repeated_factual_rejection_holds_without_another_replan(self):
+        planner = object.__new__(PeerConsultZeroShotReactPlanner)
+        planner._agents = [_ParserAgent(0)]
+        planner.curr_prompt, planner.trace = "prompt", "trace"
+        planner.replanning_count = 4
+        planner.last_high_level_actions = {}
+        planner.replan_required = True
+        planner.is_done = False
+        planner._peerconsult_refresh_prompt = False
+        planner._peerconsult_ticket_index = 0
+        planner._peerconsult_current_ticket = {}
+        planner._peerconsult_progress_signature = ("before",)
+        planner._peerconsult_hold_signature = None
+        planner._peerconsult_last_rejection = None
+        planner.get_last_agent_states = lambda: {}
+        proposal = {
+            "is_new": True, "is_done": False,
+            "high_level_action": ("Navigate", "cup", None),
+            "thought": "retry", "print": "",
+        }
+        review = {"verdict": "revise", "reason": "planning_loop_guard"}
+        planner.execute_proposal(proposal, ("Wait", None, None), {}, review=review)
+        _, info, _ = planner.execute_proposal(
+            proposal, ("Wait", None, None), {}, review=review
+        )
+        self.assertFalse(info["replan_required"][0])
+        held = planner.prepare_proposal("task", {}, {0: self.graph})
+        self.assertTrue(held["hold"])
+        planner.set_decision_card("new facts", ("after",))
+        self.assertNotEqual(
+            planner._peerconsult_hold_signature,
+            planner._peerconsult_progress_signature,
+        )
 
     def test_terminal_failure_is_retained_as_bounded_self_recovery_fact(self):
         self.board.enforce_required_recovery = True
