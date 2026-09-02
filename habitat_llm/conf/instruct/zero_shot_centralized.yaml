@@ -31,6 +31,14 @@ prompt: |-
         Agent_1_Action: <next action call for human agent>
         Assigned!
 
+        Mandatory output contract for this centralized controller:
+        - For every response that is not Done[], output both Agent_0_Action
+          and Agent_1_Action, exactly once each.
+        - Each action must be one valid call from the possible actions listed
+          for that agent. Use Wait[] when an agent should not act.
+        - Do not output Assigned! until both action lines are present.
+        - Keep Thought to at most two short sentences; do not repeat it.
+
         For every Rearrange or Place action, use exactly five comma-separated
         arguments: [object, relation, destination, spatial_constraint,
         reference_object]. When no spatial constraint is required, write both

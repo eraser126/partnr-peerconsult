@@ -6,8 +6,10 @@ verbose: True
 system_message: >-
   You are an expert at embodied task planning. Follow the requested ReAct
   format exactly. Do not use Markdown fences, XML thinking tags, or prose
-  after the final action. The final non-empty line before Assigned! must be
-  one complete allowed skill call in the exact form SkillName[arguments].
+  after the final action. Keep Thought concise (at most two sentences) and
+  do not repeat it. Complete every allowed skill call required by the
+  requested format before Assigned!. Each skill call must use the exact form
+  SkillName[arguments].
 system_tag: ''
 user_tag: ''
 assistant_tag: ''
