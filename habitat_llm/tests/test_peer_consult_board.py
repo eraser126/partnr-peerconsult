@@ -16,9 +16,6 @@ from habitat_llm.evaluation.peer_consult_decentralized_evaluation_runner import 
     PeerConsultDecentralizedEvaluationRunner,
 )
 from habitat_llm.evaluation.evaluation_runner import EvaluationRunner
-from habitat_llm.planner.peer_consult_zero_shot_react_planner import (
-    PeerConsultZeroShotReactPlanner,
-)
 
 
 class _Node:
@@ -116,31 +113,6 @@ class PeerConsultV4Tests(unittest.TestCase):
         final, reviews, _ = self.board.review({0: _proposal(("Explore", "kitchen_0", None)), 1: _proposal(("Wait", None, None), False)})
         self.assertEqual(self.board.tasks[task_id]["status"], "completed")
         self.assertEqual(final[0][0], "Wait")
-        self.assertEqual(reviews[0]["reason"], "completed_task")
-
-    def test_late_competing_failure_cannot_reopen_completed_task(self):
-        action = ("Rearrange", "cup,on,table_0,None,None", None)
-        _, _, intents = self.board.review({
-            0: _proposal(action), 1: _proposal(("Wait", None, None), False)
-        })
-        task_id = intents[0]["task_id"]
-        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
-            "id": 1, "action": "Rearrange", "input": action[1],
-            "task_id": task_id, "terminal": True,
-            "outcome": "terminal_success", "response": "Successful execution!",
-        }}})
-        self.board.observe({0: self.graph, 1: self.graph})
-        self.board.record_execution_evidence({"peerconsult_action_ticket": {1: {
-            "id": 2, "agent": 1, "action": "Rearrange", "input": action[1],
-            "task_id": task_id, "terminal": True,
-            "outcome": "terminal_failure", "response": "Failed to pick! Not close enough to the object.",
-        }}})
-        self.board.observe({0: self.graph, 1: self.graph})
-        final, reviews, _ = self.board.review({
-            0: _proposal(("Wait", None, None), False), 1: _proposal(action)
-        })
-        self.assertEqual(self.board.tasks[task_id]["status"], "completed")
-        self.assertEqual(final[1][0], "Wait")
         self.assertEqual(reviews[0]["reason"], "completed_task")
 
     def test_long_transport_claim_survives_peer_boundaries(self):
@@ -306,78 +278,13 @@ class PeerConsultV4Tests(unittest.TestCase):
         )
         self.assertEqual(runner.env_interface.agent_action_history[0], [])
 
-    def test_loop_guard_rejects_exact_repeat_until_progress(self):
+    def test_loop_guard_rejects_exact_repeat_once(self):
         proposal = {0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)}
         self.board.review(proposal)
         self.board.review(proposal)
         final, reviews, _ = self.board.review(proposal)
         self.assertEqual(final[0][0], "Wait")
         self.assertEqual(reviews[0]["reason"], "planning_loop_guard")
-        # Rejecting an identical retry must not clear the guard; otherwise
-        # Qwen can alternate between an accepted retry and a rejected retry.
-        final, reviews, _ = self.board.review(proposal)
-        self.assertEqual(final[0][0], "Wait")
-        self.assertEqual(reviews[0]["reason"], "planning_loop_guard")
-        # A verified state transition permits the action again.
-        self.board.progress_versions[0] += 1
-        final, reviews, _ = self.board.review(proposal)
-        self.assertEqual(final[0][0], "Pick")
-        self.assertEqual(reviews, [])
-
-    def test_repeated_factual_rejection_holds_without_another_replan(self):
-        planner = object.__new__(PeerConsultZeroShotReactPlanner)
-        planner._agents = [_ParserAgent(0)]
-        planner.curr_prompt, planner.trace = "prompt", "trace"
-        planner.replanning_count = 4
-        planner.last_high_level_actions = {}
-        planner.replan_required = True
-        planner.is_done = False
-        planner._peerconsult_refresh_prompt = False
-        planner._peerconsult_ticket_index = 0
-        planner._peerconsult_current_ticket = {}
-        planner._peerconsult_progress_signature = ("before",)
-        planner._peerconsult_hold_signature = None
-        planner._peerconsult_last_rejection = None
-        planner.get_last_agent_states = lambda: {}
-        proposal = {
-            "is_new": True, "is_done": False,
-            "high_level_action": ("Navigate", "cup", None),
-            "thought": "retry", "print": "",
-        }
-        review = {"verdict": "revise", "reason": "planning_loop_guard"}
-        planner.execute_proposal(proposal, ("Wait", None, None), {}, review=review)
-        _, info, _ = planner.execute_proposal(
-            proposal, ("Wait", None, None), {}, review=review
-        )
-        self.assertFalse(info["replan_required"][0])
-        held = planner.prepare_proposal("task", {}, {0: self.graph})
-        self.assertTrue(held["hold"])
-        planner.set_decision_card("new facts", ("after",))
-        self.assertNotEqual(
-            planner._peerconsult_hold_signature,
-            planner._peerconsult_progress_signature,
-        )
-        self.assertTrue(planner._release_hold_after_progress())
-        self.assertIsNone(planner._peerconsult_hold_signature)
-        self.assertTrue(planner.replan_required)
-
-    def test_required_recovery_is_available_as_exact_board_action(self):
-        self.board.enforce_required_recovery = True
-        _, _, intents = self.board.review({0: _proposal(("Pick", "cup", None)), 1: _proposal(("Wait", None, None), False)})
-        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
-            "id": 1, "action": "Pick", "input": "cup", "task_id": intents[0]["task_id"],
-            "terminal": True, "outcome": "terminal_failure",
-            "response": "Failed to pick! Not close enough to the object.",
-        }}})
-        self.board.observe({0: self.graph, 1: self.graph})
-        self.assertEqual(self.board.required_recovery_action(0), ("Navigate", "cup", None))
-
-    def test_public_progress_resets_replanning_budget(self):
-        planner = object.__new__(PeerConsultZeroShotReactPlanner)
-        planner.replanning_count = 5
-        planner._peerconsult_progress_signature = ("before",)
-        planner.set_decision_card("new public fact", ("after",))
-        self.assertEqual(planner.replanning_count, 0)
 
     def test_terminal_failure_is_retained_as_bounded_self_recovery_fact(self):
         self.board.enforce_required_recovery = True
@@ -441,19 +348,6 @@ class PeerConsultV4Tests(unittest.TestCase):
         self.assertEqual(reviews[0]["reason"], "required_recovery")
         final, _, _ = self.board.review({0: _proposal(("Navigate", "table_0", None)), 1: _proposal(("Wait", None, None), False)})
         self.assertEqual(final[0][0], "Navigate")
-
-    def test_rearrange_pick_distance_failure_recovers_to_source_object(self):
-        self.board.enforce_required_recovery = True
-        action = ("Rearrange", "cup,on,table_0,None,None", None)
-        _, _, intents = self.board.review({0: _proposal(action), 1: _proposal(("Wait", None, None), False)})
-        self.board.record_execution_evidence({"peerconsult_action_ticket": {0: {
-            "id": 1, "action": "Rearrange", "input": action[1],
-            "task_id": intents[0]["task_id"], "terminal": True,
-            "outcome": "terminal_failure",
-            "response": "Unexpected failure! - Failed to pick! Not close enough to the object.",
-        }}})
-        self.board.observe({0: self.graph, 1: self.graph})
-        self.assertIn("self_required_recovery=Navigate[cup]", self.board.decision_card(0))
 
     def test_successful_place_temporarily_blocks_undoing_the_relation(self):
         self.board.enforce_placement_stability = True

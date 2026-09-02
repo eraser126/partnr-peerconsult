@@ -71,10 +71,7 @@ class PeerConsultBoard:
         self.required_recoveries: Dict[int, Optional[str]] = {0: None, 1: None}
         self.recovery_advice: Dict[int, Optional[str]] = {0: None, 1: None}
         self.progress_versions, self.action_history = {0: 0, 1: 0}, {0: {}, 1: {}}
-        # A loop guard is tied to the progress version at which it was set.
-        # A real executor success/ownership change invalidates it, while a
-        # validator-inserted Wait or another LLM retry does not.
-        self.pending_loop_guards: Dict[int, Optional[Dict[str, Any]]] = {0: None, 1: None}
+        self.pending_loop_guards: Dict[int, Optional[str]] = {0: None, 1: None}
         self.reviews: List[Dict[str, Any]] = []
         self.events: List[Dict[str, Any]] = []
 
@@ -114,21 +111,6 @@ class PeerConsultBoard:
         value = {"step": self.protocol_step, "agent": uid, "type": kind, "subject": subject}
         if value not in self.events:
             self.events.append(value)
-
-    def _advance_progress(self, uid: int) -> None:
-        """Record a physical success and release any stale repeat-action ban."""
-        self.progress_versions[uid] += 1
-        self.pending_loop_guards[uid] = None
-
-    def _active_loop_guard(self, uid: int, action_identity: Optional[str] = None) -> Optional[str]:
-        """Return the active guard identity, scoped to the current progress state."""
-        guard = self.pending_loop_guards.get(uid)
-        if not guard or guard.get("progress") != self.progress_versions[uid]:
-            return None
-        identity = guard.get("identity")
-        if action_identity is not None and identity != action_identity:
-            return None
-        return identity
 
     @staticmethod
     def _location(graph: Any, obj: Any) -> Tuple[Optional[str], Optional[str]]:
@@ -244,14 +226,7 @@ class PeerConsultBoard:
             if action_name == "pick" and action_input:
                 recovery_target = action_input
             elif action_name in {"place", "rearrange"} and len(values) >= 3:
-                # Rearrange is a composite navigate-pick-place action. A
-                # failed pick needs navigation to the source object, whereas
-                # a failed place needs navigation to the destination.
-                failed_pick = (
-                    "failed to pick" in response.lower()
-                    or "not close enough to the object" in response.lower()
-                )
-                recovery_target = values[0] if action_name == "rearrange" and failed_pick else values[2]
+                recovery_target = values[2]
         if recovery_target:
             recovery = "Navigate[{}]".format(recovery_target)
             self.recovery_advice[uid] = recovery
@@ -272,13 +247,9 @@ class PeerConsultBoard:
             task, uid = self.tasks[task_id], int(self.tasks[task_id]["agent"])
             if ticket.get("outcome") == "terminal_success":
                 task["status"] = "completed"
-                self._advance_progress(uid)
+                self.progress_versions[uid] += 1
                 self._event(uid, "task_completed", task_id)
-            # A competing or stale executor can report failure after another
-            # agent has already completed the same canonical task. Completion
-            # is a monotonic public fact: never let that later failure reopen
-            # the task and authorize a duplicate transport.
-            elif task.get("status") != "completed":
+            else:
                 task["status"] = "suspended"
                 self._event(uid, "task_failure", task_id)
             self._release(task_id)
@@ -308,20 +279,6 @@ class PeerConsultBoard:
         value = str(intent.get("action", (None, None, None))[1] or "")
         return "{}[{}]".format(action, value) == recovery
 
-    def required_recovery_action(self, uid: int) -> Optional[Action]:
-        """Return a fact-derived recovery action without asking the LLM.
-
-        Recovery targets are created only from this agent's terminal executor
-        feedback.  Executing the exact recorded action is therefore a safety
-        continuation, not a task-selection policy or privileged observation.
-        """
-        recovery = self.required_recoveries.get(uid)
-        if not recovery or "[" not in recovery or not recovery.endswith("]"):
-            return None
-        name, value = recovery.split("[", 1)
-        name, value = name.strip(), value[:-1].strip()
-        return (name or None, value or None, None)
-
     def observe(self, world_graphs: Mapping[int, Any]) -> None:
         self.tick += 1
         self._consume_evidence()
@@ -344,7 +301,7 @@ class PeerConsultBoard:
         self.physical_owners = owners
         for name, uid in owners.items():
             if prior.get(name) != uid:
-                self._advance_progress(uid)
+                self.progress_versions[uid] += 1
                 self._event(uid, "task_progress", "ownership:{}".format(name))
         self._expire()
 
@@ -406,7 +363,8 @@ class PeerConsultBoard:
                 and not self._matches_required_recovery(intent, self.required_recoveries.get(uid))
             ):
                 self._reject(uid, intent, final, reviews, "required_recovery")
-            elif self._active_loop_guard(uid, intent.get("action_identity")):
+            elif self.pending_loop_guards.get(uid) == intent.get("action_identity"):
+                self.pending_loop_guards[uid] = None
                 self._reject(uid, intent, final, reviews, "planning_loop_guard")
         grouped: Dict[str, List[int]] = {}
         for uid in mutable:
@@ -477,13 +435,10 @@ class PeerConsultBoard:
                 self.room_reservations[str(intent["room_scope"])] = {"agent": uid, "task_id": task_id, "step": self.protocol_step}
             prior = self.action_history[uid]
             if prior.get("identity") == intent.get("action_identity") and prior.get("progress") == self.progress_versions[uid]:
-                # The current action is the first observed duplicate.  Mark
-                # the identity now; the next proposal is rejected before it
-                # reaches the executor and the guard remains until progress.
-                self.pending_loop_guards[uid] = {
-                    "identity": intent.get("action_identity"),
-                    "progress": self.progress_versions[uid],
-                }
+                self.pending_loop_guards[uid] = intent.get("action_identity")
+                if task_id in self.tasks:
+                    self.tasks[task_id]["status"] = "suspended"
+                    self._release(task_id)
             self.action_history[uid] = {"identity": intent.get("action_identity"), "progress": self.progress_versions[uid]}
             if task_id and intent.get("stage") not in {"wait", "done"}:
                 self.active_executions[uid] = dict(intent)
@@ -603,7 +558,7 @@ class PeerConsultBoard:
                  for resource, value in sorted(self.settled_placements.items())][-self.max_targets:] or ["none"]
             ),
             "validator_feedback={}".format(reviews or ["none"]),
-            "loop_guard={}".format(self._active_loop_guard(uid) or "none"),
+            "loop_guard={}".format(self.pending_loop_guards[uid] or "none"),
             "self_recent_execution={}".format(self.execution_facts[uid] or ["none"]),
             "self_required_recovery={}".format(self.required_recoveries[uid] or "none"),
             "self_recovery_advice={}".format(self.recovery_advice[uid] or "none"),
