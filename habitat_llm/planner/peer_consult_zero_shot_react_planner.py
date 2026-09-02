@@ -25,9 +25,17 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self._peerconsult_ticket_index = 0
         self._peerconsult_current_ticket: Dict[str, Any] = {}
         self._peerconsult_refresh_prompt = False
+        self._peerconsult_forced_action = None
+        self._peerconsult_last_forced_action = None
 
     def set_decision_card(self, card: str) -> None:
         self.peerconsult_card = card
+
+    def set_forced_action(self, action) -> None:
+        """Accept one executor-derived recovery action from the V4 board."""
+        self._peerconsult_forced_action = action
+        if action is None:
+            self._peerconsult_last_forced_action = None
 
     def prepare_prompt(self, input_instruction, world_graph, **kwargs):
         _, params = super().prepare_prompt(input_instruction, world_graph, should_format=False, **kwargs)
@@ -75,6 +83,17 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
             self._fresh_prompt(instruction, observations, world_graph[uid])
         if self.trace == "":
             self.trace = "Task: {}\nThought: ".format(instruction)
+        forced = self._peerconsult_forced_action
+        if self.replan_required and forced and forced != self._peerconsult_last_forced_action:
+            intent = canonicalize_partnr_action(uid, forced, world_graph[uid])
+            if not intent.get("error"):
+                self._peerconsult_last_forced_action = forced
+                return {
+                    "is_new": True, "is_done": False,
+                    "high_level_action": tuple(intent["action"]),
+                    "thought": "Executor-derived recovery: navigate to the entity from the failed action.",
+                    "print": "", "intent": intent,
+                }
         if not self.replan_required:
             return {"is_new": False, "is_done": False, "high_level_action": self.last_high_level_actions[uid], "thought": None, "print": "", "intent": None}
         start = time.time() if verbose else None

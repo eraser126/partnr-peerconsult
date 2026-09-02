@@ -225,7 +225,12 @@ class PeerConsultBoard:
         if not success and "not close enough" in response.lower():
             if action_name == "pick" and action_input:
                 recovery_target = action_input
-            elif action_name in {"place", "rearrange"} and len(values) >= 3:
+            elif action_name == "rearrange" and values and values[0]:
+                # Rearrange begins by acquiring its source object.  If that
+                # acquisition fails, navigating to the destination repeats
+                # the same precondition error.
+                recovery_target = values[0]
+            elif action_name == "place" and len(values) >= 3:
                 recovery_target = values[2]
         if recovery_target:
             recovery = "Navigate[{}]".format(recovery_target)
@@ -278,6 +283,18 @@ class PeerConsultBoard:
         action = str(intent.get("action", (None, None, None))[0] or "")
         value = str(intent.get("action", (None, None, None))[1] or "")
         return "{}[{}]".format(action, value) == recovery
+
+    def required_recovery_action(self, uid: int) -> Optional[Action]:
+        """Expose one executor-derived recovery action, if any.
+
+        This contains no evaluator state or target ranking: it is exactly the
+        Navigate action derived from the same agent's failed skill response.
+        """
+        recovery = self.required_recoveries.get(uid)
+        if not recovery or "[" not in recovery or not recovery.endswith("]"):
+            return None
+        name, value = recovery.split("[", 1)
+        return (name or None, value[:-1].strip() or None, None)
 
     def observe(self, world_graphs: Mapping[int, Any]) -> None:
         self.tick += 1
