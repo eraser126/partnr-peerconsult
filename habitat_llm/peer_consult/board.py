@@ -465,6 +465,17 @@ class PeerConsultBoard:
     def _tasks(self, uid: int, status: str) -> List[str]:
         return sorted(task["id"] for task in self.tasks.values() if task.get("agent") == uid and task.get("status") == status)[-self.max_targets:]
 
+    def _completed_action_calls(self, uid: int) -> List[str]:
+        """Return bounded, factual action calls already completed by this agent."""
+        calls = {
+            str(task.get("action_identity"))
+            for task in self.tasks.values()
+            if task.get("agent") == uid
+            and task.get("status") == "completed"
+            and task.get("action_identity")
+        }
+        return sorted(calls)[-self.max_targets:]
+
     def _available_rooms(self, uid: int) -> List[str]:
         reserved_by_peer = {
             room
@@ -562,6 +573,9 @@ class PeerConsultBoard:
             "self_active_tasks={}".format(self._tasks(uid, "in_progress") or ["none"]),
             "self_suspended_tasks={}".format(self._tasks(uid, "suspended") or ["none"]),
             "self_completed_tasks={}".format(self._tasks(uid, "completed") or ["none"]),
+            "self_completed_action_calls={} (never repeat an exact listed call)".format(
+                self._completed_action_calls(uid) or ["none"]
+            ),
             "peer_public_held={}".format(self._held(peer) or ["none"]),
             "peer_public_tasks={}".format(self._tasks(peer, "in_progress") or ["none"]),
             "peer_claims={}".format(claims or ["none"]),
