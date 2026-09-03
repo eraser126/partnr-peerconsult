@@ -7,6 +7,9 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
+# Keep two renderers alongside the 64G local vLLM service on the 500G node.
+# Without an explicit share, scheduler defaults can serialize array tasks.
+#SBATCH --mem=140G
 #SBATCH --time=48:00:00
 #SBATCH --export=ALL
 #SBATCH --output=logs/%x-%A_%a.out
