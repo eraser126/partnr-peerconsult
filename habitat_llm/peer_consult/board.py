@@ -72,6 +72,7 @@ class PeerConsultBoard:
         self.recovery_advice: Dict[int, Optional[str]] = {0: None, 1: None}
         self.progress_versions, self.action_history = {0: 0, 1: 0}, {0: {}, 1: {}}
         self.pending_loop_guards: Dict[int, Optional[str]] = {0: None, 1: None}
+        self.hand_release_required: Dict[int, bool] = {0: False, 1: False}
         self.reviews: List[Dict[str, Any]] = []
         self.events: List[Dict[str, Any]] = []
 
@@ -296,6 +297,9 @@ class PeerConsultBoard:
         name, value = recovery.split("[", 1)
         return (name or None, value[:-1].strip() or None, None)
 
+    def needs_hand_release(self, uid: int) -> bool:
+        return bool(self.hand_release_required.get(uid) and self._held(uid))
+
     def observe(self, world_graphs: Mapping[int, Any]) -> None:
         self.tick += 1
         self._consume_evidence()
@@ -316,6 +320,9 @@ class PeerConsultBoard:
                             "room": room, "step": self.protocol_step,
                         }
         self.physical_owners = owners
+        for uid in self.hand_release_required:
+            if not self._held(uid):
+                self.hand_release_required[uid] = False
         for name, uid in owners.items():
             if prior.get(name) != uid:
                 self.progress_versions[uid] += 1
@@ -345,6 +352,8 @@ class PeerConsultBoard:
             self._event(uid, "task_commitment", task_id)
 
     def _reject(self, uid, intent, final, reviews, reason) -> None:
+        if reason == "no_free_hand":
+            self.hand_release_required[uid] = True
         final[uid] = self._wait()
         task_id = intent.get("task_id")
         if task_id and self.tasks.get(task_id, {}).get("status") != "completed":

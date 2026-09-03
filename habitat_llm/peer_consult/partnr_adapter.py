@@ -117,6 +117,52 @@ def rewrite_held_rearrange_to_place(
     return rewritten, "held_object_rearrange_rewritten_to_place"
 
 
+def build_unique_held_placement(
+    instruction: str, world_graph: Any, available_actions: Iterable[str], agent_uid: int
+) -> Optional[Action]:
+    """Return a placement only when local facts make it unambiguous.
+
+    This is a recovery guard after an observed ``no_free_hand`` rejection.  It
+    reads the agent's own hand, instruction, and local graph only; it never
+    accesses peer-only state or evaluator propositions.
+    """
+    if "place" not in {str(action).lower() for action in available_actions}:
+        return None
+    task_tokens = _tokens(instruction)
+    try:
+        held = [
+            obj for obj in world_graph.get_all_objects()
+            if _is_held_by_agent(world_graph, obj, agent_uid)
+            and _tokens(getattr(obj, "name", "")) & task_tokens
+        ]
+        furniture = list(world_graph.get_all_furnitures()) + list(
+            world_graph.get_all_receptacles()
+        )
+    except Exception:
+        return None
+    if len(held) != 1:
+        return None
+    targets = [
+        item for item in furniture
+        if _tokens(getattr(item, "name", "")) & task_tokens
+    ]
+    room_matched = [
+        item for item in targets
+        if _tokens(_entity_room_name(world_graph, item) or "") & task_tokens
+    ]
+    if room_matched:
+        targets = room_matched
+    target_names = sorted({str(getattr(item, "name", "")) for item in targets if getattr(item, "name", "")})
+    if len(target_names) != 1:
+        return None
+    relation = "within" if {"inside", "within"} & task_tokens else "on"
+    return (
+        "Place",
+        "{},{},{},None,None".format(getattr(held[0], "name", ""), relation, target_names[0]),
+        None,
+    )
+
+
 def build_grounded_transport_candidates(
     instruction: str,
     world_graph: Any,
