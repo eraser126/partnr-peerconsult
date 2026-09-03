@@ -9,7 +9,6 @@ from habitat_llm.llm.instruct.utils import get_objects_descr
 from habitat_llm.peer_consult.partnr_adapter import (
     build_grounded_transport_candidates,
     build_local_action_candidates,
-    build_unique_held_placement,
     canonicalize_partnr_action,
     execution_outcome,
     rewrite_held_rearrange_to_place,
@@ -28,8 +27,6 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self._peerconsult_refresh_prompt = False
         self._peerconsult_forced_action = None
         self._peerconsult_last_forced_action = None
-        self._peerconsult_hand_release_required = False
-        self._peerconsult_last_hand_release_action = None
 
     def set_decision_card(self, card: str) -> None:
         self.peerconsult_card = card
@@ -39,11 +36,6 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self._peerconsult_forced_action = action
         if action is None:
             self._peerconsult_last_forced_action = None
-
-    def set_hand_release_required(self, required: bool) -> None:
-        self._peerconsult_hand_release_required = bool(required)
-        if not required:
-            self._peerconsult_last_hand_release_action = None
 
     def prepare_prompt(self, input_instruction, world_graph, **kwargs):
         _, params = super().prepare_prompt(input_instruction, world_graph, should_format=False, **kwargs)
@@ -102,20 +94,6 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
                     "thought": "Executor-derived recovery: navigate to the entity from the failed action.",
                     "print": "", "intent": intent,
                 }
-        if self.replan_required and self._peerconsult_hand_release_required:
-            release = build_unique_held_placement(
-                instruction, world_graph[uid], self._agents[0].tools.keys(), uid
-            )
-            if release and release != self._peerconsult_last_hand_release_action:
-                intent = canonicalize_partnr_action(uid, release, world_graph[uid])
-                if not intent.get("error"):
-                    self._peerconsult_last_hand_release_action = release
-                    return {
-                        "is_new": True, "is_done": False,
-                        "high_level_action": tuple(intent["action"]),
-                        "thought": "Local hand-release recovery after a no-free-hand rejection.",
-                        "print": "", "intent": intent,
-                    }
         if not self.replan_required:
             return {"is_new": False, "is_done": False, "high_level_action": self.last_high_level_actions[uid], "thought": None, "print": "", "intent": None}
         start = time.time() if verbose else None
