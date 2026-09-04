@@ -25,6 +25,9 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self._peerconsult_ticket_index = 0
         self._peerconsult_current_ticket: Dict[str, Any] = {}
         self._peerconsult_refresh_prompt = False
+        # Keep the experiment-wide counter intact for metrics, while this
+        # counter bounds only the text accumulated in one LLM prompt window.
+        self._peerconsult_prompt_window_replans = 0
         self._peerconsult_forced_action = None
         self._peerconsult_last_forced_action = None
 
@@ -96,6 +99,15 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
                 }
         if not self.replan_required:
             return {"is_new": False, "is_done": False, "high_level_action": self.last_high_level_actions[uid], "thought": None, "print": "", "intent": None}
+        # ``Done`` is not an action the PARTNR planner may use to declare an
+        # episode complete: completion belongs to the benchmark evaluator.
+        # Bound only the conversation text passed to the LLM. The factual V4
+        # decision card and current local observation are rebuilt, while the
+        # full trace and total replanning_count remain available for logging.
+        if self._peerconsult_prompt_window_replans >= self.planner_config.replanning_threshold:
+            self._fresh_prompt(instruction, observations, world_graph[uid])
+            self._peerconsult_prompt_window_replans = 0
+
         start = time.time() if verbose else None
         response_info = self.replan(instruction, observations, world_graph)
         llm_response = response_info["llm_response"]
@@ -106,10 +118,8 @@ class PeerConsultZeroShotReactPlanner(ZeroShotReactPlanner):
         self.curr_prompt += "{}\n{}{}".format(llm_response, self.stopword, self.planner_config.llm.eot_tag)
         self.trace += "{}\n{}{}".format(llm_response, self.stopword, self.planner_config.llm.eot_tag)
         self.replanning_count += 1
-        if self.replanning_count - 1 == self.planner_config.replanning_threshold:
-            action, intent = ("Done", None, None), canonicalize_partnr_action(uid, ("Done", None, None), world_graph[uid])
-        else:
-            action, intent = self._validated_action(llm_response, world_graph[uid])
+        self._peerconsult_prompt_window_replans += 1
+        action, intent = self._validated_action(llm_response, world_graph[uid])
         return {"is_new": True, "is_done": False, "high_level_action": action, "thought": thought, "print": print_str, "intent": intent}
 
     def _ticket(self, action, proposal, response, terminal, task_id=None):
